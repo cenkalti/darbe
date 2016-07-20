@@ -147,9 +147,14 @@ while True:
         break
 
 print "stopping replication on read replica"
-cursor = conn.cursor()
-with closing(cursor):
-    cursor.callproc("mysql.rds_stop_replication")
+conn = mysql.connector.connect(user=args.master_user_name,
+                               password=args.master_user_password,
+                               host=read_replica_instance['Endpoint']['Address'],
+                               port=read_replica_instance['Endpoint']['Port'])
+with closing(conn):
+    cursor = conn.cursor()
+    with closing(cursor):
+        cursor.callproc("mysql.rds_stop_replication")
 
 print "getting master status"
 master_status = get_master_status()
@@ -184,9 +189,15 @@ waiter.wait(DBInstanceIdentifier=read_replica_name)
 print "creating replication user on read replica"
 repl_user_name = "darbe"
 repl_password = ''.join(random.SystemRandom().choice(string.ascii_letters + string.digits) for _ in range(20))
-cursor = conn.cursor()
-with closing(cursor):
-    cursor.execute("GRANT REPLICATION SLAVE ON *.* TO '%s'@'%%' IDENTIFIED BY '%s'" % (repl_user_name, repl_password))
+conn = mysql.connector.connect(user=args.master_user_name,
+                               password=args.master_user_password,
+                               host=read_replica_instance['Endpoint']['Address'],
+                               port=read_replica_instance['Endpoint']['Port'])
+with closing(conn):
+    cursor = conn.cursor()
+    with closing(cursor):
+        cursor.execute("GRANT REPLICATION SLAVE ON *.* TO '%s'@'%%' IDENTIFIED BY '%s'" %
+                       (repl_user_name, repl_password))
 
 print "waiting for new instance to become available"
 waiter = rds.get_waiter('db_instance_available')
