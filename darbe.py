@@ -146,6 +146,13 @@ while True:
     else:
         break
 
+print "waiting for new instance to become available"
+waiter = rds.get_waiter('db_instance_available')
+waiter.wait(DBInstanceIdentifier=args.new_instance_id)
+
+print "getting details of created read replica"
+new_instance = rds.describe_db_instances(DBInstanceIdentifier=args.new_instance_id)['DBInstances'][0]
+
 print "stopping replication on read replica"
 conn = mysql.connector.connect(user=args.master_user_name,
                                password=args.master_user_password,
@@ -162,11 +169,24 @@ binlog_filename, binlog_position = master_status[0], master_status[1]
 print "master status: filename:", binlog_filename, "position:", binlog_position
 
 print "dumping data from read replica"
-dump = subprocess.Popen(['mysqldump', '--databases', args.databases, '--single-transaction', '--order-by-primary', '-r',
-                         'dump.sql', '-h', read_replica_instance['Endpoint'][
-                             'Address'], '-P', str(read_replica_instance['Endpoint'][
-                                 'Port']), '-u', args.master_user_name, '-p%s' % args.master_user_password])
+dump = subprocess.Popen(
+    ['mysqldump', '--databases', args.databases, '--single-transaction', '--order-by-primary', '-h',
+     read_replica_instance['Endpoint'][
+         'Address'], '-P', str(read_replica_instance['Endpoint'][
+             'Port']), '-u', args.master_user_name, '-p%s' % args.master_user_password],
+    stdout=subprocess.PIPE)
+
+print "loading data to new instance"
+load = subprocess.Popen(
+    ['mysql', '-h', new_instance['Endpoint'][
+        'Address'], '-P', str(new_instance['Endpoint'][
+            'Port']), '-u', args.master_user_name, '-p%s' % args.master_user_password],
+    stdin=dump.stdout)
+
+load.wait()
+assert load.returncode == 0
 dump.wait()
+assert dump.returncode == 0
 
 print "getting master status again"
 master_status = get_master_status()
@@ -178,6 +198,10 @@ if (binlog_filename, binlog_position) != (binlog_filename2, binlog_position2):
 
 print "making read replica writable"
 rds.modify_db_instance(DBInstanceIdentifier=read_replica_name, DBParameterGroupName=new_parameter_group)
+
+print "waiting for read replica to become available"
+waiter = rds.get_waiter('db_instance_available')
+waiter.wait(DBInstanceIdentifier=read_replica_name)
 
 print "rebooting read replica instance"
 rds.reboot_db_instance(DBInstanceIdentifier=read_replica_name)
@@ -198,7 +222,3 @@ with closing(conn):
     with closing(cursor):
         cursor.execute("GRANT REPLICATION SLAVE ON *.* TO '%s'@'%%' IDENTIFIED BY '%s'" %
                        (repl_user_name, repl_password))
-
-print "waiting for new instance to become available"
-waiter = rds.get_waiter('db_instance_available')
-waiter.wait(DBInstanceIdentifier=args.new_instance_id)
