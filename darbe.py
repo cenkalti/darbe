@@ -140,7 +140,7 @@ dump = subprocess.Popen([
         '-P', str(read_replica_instance['Endpoint']['Port']),
         '-u', args.master_user_name,
         '-p%s' % args.master_user_password,
-        '--databases', args.databases,
+        '--databases', args.databases.split(','),
         '--single-transaction',
         '--order-by-primary',
     ], stdout=subprocess.PIPE)
