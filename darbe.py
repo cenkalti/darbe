@@ -183,6 +183,7 @@ load = subprocess.Popen(
             'Port']), '-u', args.master_user_name, '-p%s' % args.master_user_password],
     stdin=dump.stdout)
 
+print "waiting for data transfer to finish"
 load.wait()
 assert load.returncode == 0
 dump.wait()
