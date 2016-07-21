@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import argparse
 import random
 import string
@@ -8,6 +10,10 @@ from contextlib import closing
 
 import boto3
 import mysql.connector
+
+# check if required commands are available
+subprocess.check_call(['which', 'mysqldump'])
+subprocess.check_call(['which', 'mysql'])
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--source-instance-id", required=True)
@@ -25,19 +31,16 @@ args = parser.parse_args()
 # to append to the name of resources created by this script
 timestamp = str(datetime.utcnow()).replace('-', '').replace(':', '').replace(' ', '')[:14]
 
-# TODO always use same timestamp
-# timestamp = 6
-
 # will put this tag to every intermeatery resource crated by this tool
 tag = {'Key': 'darbe'}
 
 rds = boto3.client("rds")
 
-print "getting master instance"
+print("getting master instance")
 source_instance = rds.describe_db_instances(DBInstanceIdentifier=args.source_instance_id)['DBInstances'][0]
 original_parameter_group = source_instance['DBParameterGroups'][0]['DBParameterGroupName']
 
-print "connecting to read source instance to test credentials"
+print("connecting to read source instance to test credentials")
 conn = mysql.connector.connect(user=args.master_user_name,
                                password=args.master_user_password,
                                host=source_instance['Endpoint']['Address'],
@@ -46,14 +49,14 @@ with closing(conn):
     conn.ping()
 
 new_parameter_group = "%s-writable-%s" % (original_parameter_group, timestamp)
-print "copying parameter group as:", new_parameter_group
+print("copying parameter group as:", new_parameter_group)
 rds.copy_db_parameter_group(
     SourceDBParameterGroupIdentifier=original_parameter_group,
     TargetDBParameterGroupIdentifier=new_parameter_group,
     TargetDBParameterGroupDescription="same with %s but set read_only to 0" % original_parameter_group,
     Tags=[tag])
 
-print "adding read_only=0 to new parameter group"
+print("adding read_only=0 to new parameter group")
 rds.modify_db_parameter_group(DBParameterGroupName=new_parameter_group,
                               Parameters=[
                                   {
@@ -64,14 +67,14 @@ rds.modify_db_parameter_group(DBParameterGroupName=new_parameter_group,
                               ])
 
 read_replica_name = "%s-readreplica-%s" % (source_instance['DBInstanceIdentifier'], timestamp)
-print "crating read replica:", read_replica_name
+print("crating read replica:", read_replica_name)
 rds.create_db_instance_read_replica(DBInstanceIdentifier=read_replica_name,
                                     SourceDBInstanceIdentifier=source_instance['DBInstanceIdentifier'],
                                     DBInstanceClass=source_instance['DBInstanceClass'],
                                     AvailabilityZone=source_instance['AvailabilityZone'],
                                     Tags=[tag])['DBInstance']
 
-print "creating new db instance:", args.new_instance_id
+print("creating new db instance:", args.new_instance_id)
 new_instance_params = dict(
         AllocatedStorage=args.allocated_storage or source_instance['AllocatedStorage'],
         AutoMinorVersionUpgrade=source_instance['AutoMinorVersionUpgrade'],
@@ -105,14 +108,14 @@ if source_instance.get('MonitoringInterval', 0) > 0:
     new_instance_params['MonitoringRoleArn'] = source_instance['MonitoringRoleArn']
 rds.create_db_instance(**new_instance_params)
 
-print "waiting for read replica to become available"
+print("waiting for read replica to become available")
 waiter = rds.get_waiter('db_instance_available')
 waiter.wait(DBInstanceIdentifier=read_replica_name)
 
-print "getting details of created read replica"
+print("getting details of created read replica")
 read_replica_instance = rds.describe_db_instances(DBInstanceIdentifier=read_replica_name)['DBInstances'][0]
 
-print "enabling backups on read replica"
+print("enabling backups on read replica")
 rds.modify_db_instance(DBInstanceIdentifier=read_replica_name,
                        BackupRetentionPeriod=1,  # to enable automated backups
                        PreferredBackupWindow='00:00-00:30',  # to enable automated backups
@@ -131,13 +134,13 @@ def get_master_status():
                 cursor.execute("SHOW MASTER STATUS")
                 result = cursor.fetchone()
     except Exception as e:
-        print e
+        print(e)
         return None
     else:
         return result
 
 
-print "waiting until binlog is enabled"
+print("waiting until binlog is enabled")
 while True:
     master_status = get_master_status()
     if master_status is None:
@@ -146,14 +149,14 @@ while True:
     else:
         break
 
-print "waiting for new instance to become available"
+print("waiting for new instance to become available")
 waiter = rds.get_waiter('db_instance_available')
 waiter.wait(DBInstanceIdentifier=args.new_instance_id)
 
-print "getting details of created read replica"
+print("getting details of created read replica")
 new_instance = rds.describe_db_instances(DBInstanceIdentifier=args.new_instance_id)['DBInstances'][0]
 
-print "stopping replication on read replica"
+print("stopping replication on read replica")
 conn = mysql.connector.connect(user=args.master_user_name,
                                password=args.master_user_password,
                                host=read_replica_instance['Endpoint']['Address'],
@@ -163,12 +166,12 @@ with closing(conn):
     with closing(cursor):
         cursor.callproc("mysql.rds_stop_replication")
 
-print "getting master status"
+print("getting master status")
 master_status = get_master_status()
 binlog_filename, binlog_position = master_status[0], master_status[1]
-print "master status: filename:", binlog_filename, "position:", binlog_position
+print("master status: filename:", binlog_filename, "position:", binlog_position)
 
-print "dumping data from read replica"
+print("dumping data from read replica")
 dump = subprocess.Popen(
     ['mysqldump', '--databases', args.databases, '--single-transaction', '--order-by-primary', '-h',
      read_replica_instance['Endpoint'][
@@ -176,42 +179,42 @@ dump = subprocess.Popen(
              'Port']), '-u', args.master_user_name, '-p%s' % args.master_user_password],
     stdout=subprocess.PIPE)
 
-print "loading data to new instance"
+print("loading data to new instance")
 load = subprocess.Popen(
     ['mysql', '-h', new_instance['Endpoint'][
         'Address'], '-P', str(new_instance['Endpoint'][
             'Port']), '-u', args.master_user_name, '-p%s' % args.master_user_password],
     stdin=dump.stdout)
 
-print "waiting for data transfer to finish"
+print("waiting for data transfer to finish")
 load.wait()
 assert load.returncode == 0
 dump.wait()
 assert dump.returncode == 0
 
-print "getting master status again"
+print("getting master status again")
 master_status = get_master_status()
 binlog_filename2, binlog_position2 = master_status[0], master_status[1]
-print "master status: filename:", binlog_filename2, "position:", binlog_position2
+print("master status: filename:", binlog_filename2, "position:", binlog_position2)
 
 if (binlog_filename, binlog_position) != (binlog_filename2, binlog_position2):
     raise Exception("changed master position on read replica while dumping data")
 
-print "making read replica writable"
+print("making read replica writable")
 rds.modify_db_instance(DBInstanceIdentifier=read_replica_name, DBParameterGroupName=new_parameter_group)
 
-print "waiting for read replica to become available"
+print("waiting for read replica to become available")
 waiter = rds.get_waiter('db_instance_available')
 waiter.wait(DBInstanceIdentifier=read_replica_name)
 
-print "rebooting read replica instance"
+print("rebooting read replica instance")
 rds.reboot_db_instance(DBInstanceIdentifier=read_replica_name)
 
-print "waiting for read replica to become available"
+print("waiting for read replica to become available")
 waiter = rds.get_waiter('db_instance_available')
 waiter.wait(DBInstanceIdentifier=read_replica_name)
 
-print "creating replication user on read replica"
+print("creating replication user on read replica")
 repl_user_name = "darbe"
 repl_password = ''.join(random.SystemRandom().choice(string.ascii_letters + string.digits) for _ in range(20))
 conn = mysql.connector.connect(user=args.master_user_name,
@@ -223,3 +226,15 @@ with closing(conn):
     with closing(cursor):
         cursor.execute("GRANT REPLICATION SLAVE ON *.* TO '%s'@'%%' IDENTIFIED BY '%s'" %
                        (repl_user_name, repl_password))
+
+    print("setting master status on new instance")
+    cursor = conn.cursor()
+    with closing(cursor):
+        cursor.callproc("mysql.rds_set_external_master('%s', %i, '%s', '%s', '%s', '%s', 0)" %
+                        (new_instance['Endpoint']['Address'], new_instance['Endpoint']['Port'], repl_user_name,
+                         repl_password, binlog_filename, binlog_position))
+
+    print("starting replication on new instance")
+    cursor = conn.cursor()
+    with closing(cursor):
+        cursor.callproc("mysql.rds_start_replication")
