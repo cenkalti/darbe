@@ -86,7 +86,6 @@ new_instance_params = dict(
         CopyTagsToSnapshot=source_instance['CopyTagsToSnapshot'],
         DBInstanceClass=args.db_instance_class or source_instance['DBInstanceClass'],
         DBInstanceIdentifier=args.new_instance_id,
-        DBName=args.databases.split(',')[0],
         DBParameterGroupName=source_instance['DBParameterGroups'][0]['DBParameterGroupName'],
         DBSubnetGroupName=source_instance['DBSubnetGroup']['DBSubnetGroupName'],
         Engine=source_instance['Engine'],
