@@ -40,19 +40,23 @@ def connect_db(instance):
         with closing(cursor):
             yield cursor
 
-# unique string representing current second like 20160101090500
-# to append to the name of resources created by this script
-timestamp = str(datetime.utcnow()).replace('-', '').replace(':', '').replace(' ', '')[:14]
-
 rds = boto3.client("rds")
 
 print("getting details of source instance")
 source_instance = rds.describe_db_instances(DBInstanceIdentifier=args.source_instance_id)['DBInstances'][0]
 
 print("setting binlog retention hours on source instance to:", args.binlog_retention_hours)
-with connect_db(source_instance) as cursor:
-    cursor.callproc("mysql.rds_set_configuration", ('binlog retention hours', args.binlog_retention_hours))
+subprocess.check_call([
+        'mysql',
+        '-h', source_instance['Endpoint']['Address'],
+        '-P', str(source_instance['Endpoint']['Port']),
+        '-u', args.master_user_name,
+        '-p%s' % args.master_user_password,
+        '-e', "call mysql.rds_set_configuration('binlog retention hours', %i)" % args.binlog_retention_hours,
+    ])
 
+# unique string representing current second like 20160101090500
+timestamp = str(datetime.utcnow()).replace('-', '').replace(':', '').replace(' ', '')[:14]
 read_replica_instance_id = "%s-readreplica-%s" % (source_instance['DBInstanceIdentifier'], timestamp)
 print("crating read replica:", read_replica_instance_id)
 rds.create_db_instance_read_replica(DBInstanceIdentifier=read_replica_instance_id,
