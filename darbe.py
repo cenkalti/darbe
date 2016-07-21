@@ -183,7 +183,7 @@ with connect_db(new_instance) as cursor:
 changes = {}
 if source_instance['BackupRetentionPeriod'] > 0:
     changes['BackupRetentionPeriod'] = source_instance['BackupRetentionPeriod']
-    changes['BackupWindow'] = source_instance['BackupWindow']
+    changes['PreferredBackupWindow'] = source_instance['PreferredBackupWindow']
 if source_instance['MultiAZ']:
     changes['MultiAZ'] = source_instance['MultiAZ']
 if changes:
