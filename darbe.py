@@ -134,16 +134,18 @@ with connect_db(read_replica_instance) as cursor:
     print("master status: filename:", binlog_filename, "position:", binlog_position)
 
 print("dumping data from read replica")
-dump = subprocess.Popen([
+args = [
         'mysqldump',
         '-h', read_replica_instance['Endpoint']['Address'],
         '-P', str(read_replica_instance['Endpoint']['Port']),
         '-u', args.master_user_name,
         '-p%s' % args.master_user_password,
-        '--databases', args.databases.split(','),
         '--single-transaction',
         '--order-by-primary',
-    ], stdout=subprocess.PIPE)
+        '--databases',
+    ]
+args.extend(args.databases.split(','))
+dump = subprocess.Popen(args, stdout=subprocess.PIPE)
 
 print("loading data to new instance")
 load = subprocess.Popen([
