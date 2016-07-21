@@ -4,6 +4,7 @@ import argparse
 import random
 import string
 import subprocess
+import time
 from datetime import datetime
 from contextlib import closing, contextmanager
 
@@ -24,6 +25,7 @@ parser.add_argument("--db-instance-class")
 parser.add_argument("--engine-version")
 parser.add_argument("--allocated-storage", type=int)
 parser.add_argument("--iops", type=int)
+parser.add_argument("--binlog-retention-hours", type=int, default=24)
 args = parser.parse_args()
 
 
@@ -47,9 +49,13 @@ rds = boto3.client("rds")
 print("getting details of source instance")
 source_instance = rds.describe_db_instances(DBInstanceIdentifier=args.source_instance_id)['DBInstances'][0]
 
-read_replica_name = "%s-readreplica-%s" % (source_instance['DBInstanceIdentifier'], timestamp)
-print("crating read replica:", read_replica_name)
-rds.create_db_instance_read_replica(DBInstanceIdentifier=read_replica_name,
+print("setting binlog retention hours on source instance to:", args.binlog_retention_hours)
+with connect_db(source_instance) as cursor:
+    cursor.callproc("mysql.rds_set_configuration", ('binlog retention hours', args.binlog_retention_hours))
+
+read_replica_instance_id = "%s-readreplica-%s" % (source_instance['DBInstanceIdentifier'], timestamp)
+print("crating read replica:", read_replica_instance_id)
+rds.create_db_instance_read_replica(DBInstanceIdentifier=read_replica_instance_id,
                                     SourceDBInstanceIdentifier=source_instance['DBInstanceIdentifier'],
                                     DBInstanceClass=source_instance['DBInstanceClass'],
                                     AvailabilityZone=source_instance['AvailabilityZone'])['DBInstance']
@@ -63,7 +69,7 @@ new_instance_params = dict(
         CopyTagsToSnapshot=source_instance['CopyTagsToSnapshot'],
         DBInstanceClass=args.db_instance_class or source_instance['DBInstanceClass'],
         DBInstanceIdentifier=args.new_instance_id,
-        DBName='darbe',  # will be removed after instance is created
+        DBName=args.databases.split(',')[0],
         DBParameterGroupName=source_instance['DBParameterGroups'][0]['DBParameterGroupName'],
         DBSubnetGroupName=source_instance['DBSubnetGroup']['DBSubnetGroupName'],
         Engine=source_instance['Engine'],
@@ -71,7 +77,7 @@ new_instance_params = dict(
         LicenseModel=source_instance['LicenseModel'],
         MasterUserPassword=args.master_user_password,
         MasterUsername=args.master_user_name,
-        MultiAZ=False,  # should be False while importing for performance reason, will modify after import
+        MultiAZ=False,  # should be False for fast import, will change later
         OptionGroupName=source_instance['OptionGroupMemberships'][0]['OptionGroupName'],
         Port=source_instance['Endpoint']['Port'],
         PreferredBackupWindow=source_instance['PreferredBackupWindow'],
@@ -90,10 +96,10 @@ rds.create_db_instance(**new_instance_params)
 
 print("waiting for read replica to become available")
 waiter = rds.get_waiter('db_instance_available')
-waiter.wait(DBInstanceIdentifier=read_replica_name)
+waiter.wait(DBInstanceIdentifier=read_replica_instance_id)
 
 print("getting details of created read replica")
-read_replica_instance = rds.describe_db_instances(DBInstanceIdentifier=read_replica_name)['DBInstances'][0]
+read_replica_instance = rds.describe_db_instances(DBInstanceIdentifier=read_replica_instance_id)['DBInstances'][0]
 
 print("waiting for new instance to become available")
 waiter = rds.get_waiter('db_instance_available')
@@ -108,7 +114,7 @@ with connect_db(read_replica_instance) as cursor:
 
     print("finding binlog position")
     cursor.execute("SHOW SLAVE STATUS")
-    slave_status = row = dict(zip(cursor.column_names, cursor.fetchone()))
+    slave_status = dict(zip(cursor.column_names, cursor.fetchone()))
 
     binlog_filename, binlog_position = slave_status['Relay_Master_Log_File'], slave_status['Exec_Master_Log_Pos']
     print("master status: filename:", binlog_filename, "position:", binlog_position)
@@ -139,6 +145,10 @@ load.wait()
 assert load.returncode == 0
 dump.wait()
 assert dump.returncode == 0
+print("data transfer is finished")
+
+print("print deleting read replica instance")
+rds.delete_db_instance(DBInstanceIdentifier=read_replica_instance_id, SkipFinalSnapshot=True)
 
 print("creating replication user on source instance")
 repl_user_name = "darbe"
@@ -152,7 +162,32 @@ with connect_db(new_instance) as cursor:
                     (source_instance['Endpoint']['Address'], source_instance['Endpoint']['Port'], repl_user_name,
                      repl_password, binlog_filename, binlog_position, 0))
 
-# TODO resume replication on read replica
-# TODO wait until new instance catches source instance
-# TODO delete read replica
-# TODO modify new instance
+    print("starting replication on new instance")
+    cursor.callproc("mysql.rds_start_replication")
+
+    print("wating until new instance catches source instance")
+    while True:
+        cursor.execute("SHOW SLAVE STATUS")
+        slave_status = dict(zip(cursor.column_names, cursor.fetchone()))
+        seconds_behind_master = slave_status['Seconds_Behind_Master']
+        print("seconds behind master:", seconds_behind_master)
+        if seconds_behind_master < 1:
+            break
+
+        time.sleep(4)
+
+changes = {}
+if source_instance['BackupRetentionPeriod'] > 0:
+    changes['BackupRetentionPeriod'] = source_instance['BackupRetentionPeriod']
+    changes['BackupWindow'] = source_instance['BackupWindow']
+if source_instance['MultiAZ']:
+    changes['MultiAZ'] = source_instance['MultiAZ']
+if changes:
+    print("modifying new instance last time")
+    rds.modify_db_instance(DBInstanceIdentifier=args.new_instance_id, ApplyImmediately=True, **changes)
+
+    print("waiting for new instance to become available")
+    waiter = rds.get_waiter('db_instance_available')
+    waiter.wait(DBInstanceIdentifier=args.new_instance_id)
+
+print("all done")
