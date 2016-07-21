@@ -9,6 +9,7 @@ from datetime import datetime
 from contextlib import closing, contextmanager
 
 import boto3
+import botocore.exceptions
 import mysql.connector
 
 print("checking required programs")
@@ -28,6 +29,9 @@ parser.add_argument("--iops", type=int)
 parser.add_argument("--binlog-retention-hours", type=int, default=24)
 args = parser.parse_args()
 
+rds = boto3.client("rds")
+db_instance_available = rds.get_waiter('db_instance_available')
+
 
 @contextmanager
 def connect_db(instance):
@@ -40,7 +44,16 @@ def connect_db(instance):
         with closing(cursor):
             yield cursor
 
-rds = boto3.client("rds")
+
+def wait_db_instance_available(instance_id):
+    while True:
+        try:
+            db_instance_available.wait(DBInstanceIdentifier=instance_id)
+        except botocore.exceptions.WaiterError:
+            continue
+        else:
+            break
+
 
 print("getting details of source instance")
 source_instance = rds.describe_db_instances(DBInstanceIdentifier=args.source_instance_id)['DBInstances'][0]
@@ -99,15 +112,13 @@ if source_instance.get('MonitoringInterval', 0) > 0:
 rds.create_db_instance(**new_instance_params)
 
 print("waiting for read replica to become available")
-waiter = rds.get_waiter('db_instance_available')
-waiter.wait(DBInstanceIdentifier=read_replica_instance_id)
+wait_db_instance_available(read_replica_instance_id)
 
 print("getting details of created read replica")
 read_replica_instance = rds.describe_db_instances(DBInstanceIdentifier=read_replica_instance_id)['DBInstances'][0]
 
 print("waiting for new instance to become available")
-waiter = rds.get_waiter('db_instance_available')
-waiter.wait(DBInstanceIdentifier=args.new_instance_id)
+wait_db_instance_available(args.new_instance_id)
 
 print("getting details of new instance")
 new_instance = rds.describe_db_instances(DBInstanceIdentifier=args.new_instance_id)['DBInstances'][0]
@@ -189,9 +200,5 @@ if source_instance['MultiAZ']:
 if changes:
     print("modifying new instance last time")
     rds.modify_db_instance(DBInstanceIdentifier=args.new_instance_id, ApplyImmediately=True, **changes)
-
-    print("waiting for new instance to become available")
-    waiter = rds.get_waiter('db_instance_available')
-    waiter.wait(DBInstanceIdentifier=args.new_instance_id)
 
 print("all done")
