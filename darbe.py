@@ -11,7 +11,7 @@ from contextlib import closing
 import boto3
 import mysql.connector
 
-# check if required commands are available
+print("checking required programs")
 subprocess.check_call(['which', 'mysqldump'])
 subprocess.check_call(['which', 'mysql'])
 
@@ -230,7 +230,7 @@ with closing(conn):
     print("setting master status on new instance")
     cursor = conn.cursor()
     with closing(cursor):
-        cursor.callproc("mysql.rds_set_external_master('%s', %i, '%s', '%s', '%s', '%s', 0)" %
+        cursor.callproc("mysql.rds_set_external_master('%s', %i, '%s', '%s', '%s', '%s', 0)",
                         (new_instance['Endpoint']['Address'], new_instance['Endpoint']['Port'], repl_user_name,
                          repl_password, binlog_filename, binlog_position))
 
@@ -238,3 +238,8 @@ with closing(conn):
     cursor = conn.cursor()
     with closing(cursor):
         cursor.callproc("mysql.rds_start_replication")
+
+    print("getting slave status of new instance")
+    cursor = conn.cursor()
+    with closing(cursor):
+        cursor.execute("SHOW SLAVE STATUS")
