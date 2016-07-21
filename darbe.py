@@ -92,7 +92,7 @@ new_instance_params = dict(
         VpcSecurityGroupIds=[g['VpcSecurityGroupId'] for g in source_instance['VpcSecurityGroups']],
     )
 if source_instance.get('Iops', 0) > 0:
-    new_instance_params['Iops'] = source_instance['Iops']
+    new_instance_params['Iops'] = args.iops or source_instance['Iops']
 if source_instance.get('MonitoringInterval', 0) > 0:
     new_instance_params['MonitoringInterval'] = source_instance['MonitoringInterval']
     new_instance_params['MonitoringRoleArn'] = source_instance['MonitoringRoleArn']
