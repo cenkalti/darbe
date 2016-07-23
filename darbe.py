@@ -154,6 +154,7 @@ load = subprocess.Popen([
         '-P', str(new_instance['Endpoint']['Port']),
         '-u', args.master_user_name,
         '-p%s' % args.master_user_password,
+        '-f',
     ], stdin=dump.stdout)
 
 print("waiting for data transfer to finish")
