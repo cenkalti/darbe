@@ -24,6 +24,7 @@ parser.add_argument("--databases", required=True)
 parser.add_argument("--new-instance-id", required=True)
 parser.add_argument("--db-instance-class")
 parser.add_argument("--engine-version")
+parser.add_argument("--parameter-group")
 parser.add_argument("--allocated-storage", type=int)
 parser.add_argument("--iops", type=int)
 parser.add_argument("--binlog-retention-hours", type=int, default=24)
@@ -86,7 +87,7 @@ new_instance_params = dict(
         CopyTagsToSnapshot=source_instance['CopyTagsToSnapshot'],
         DBInstanceClass=args.db_instance_class or source_instance['DBInstanceClass'],
         DBInstanceIdentifier=args.new_instance_id,
-        DBParameterGroupName=source_instance['DBParameterGroups'][0]['DBParameterGroupName'],
+        DBParameterGroupName=args.parameter_group or source_instance['DBParameterGroups'][0]['DBParameterGroupName'],
         DBSubnetGroupName=source_instance['DBSubnetGroup']['DBSubnetGroupName'],
         Engine=source_instance['Engine'],
         EngineVersion=args.engine_version or source_instance['EngineVersion'],
