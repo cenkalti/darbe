@@ -25,6 +25,7 @@ parser.add_argument("--new-instance-id", required=True)
 parser.add_argument("--db-instance-class")
 parser.add_argument("--engine-version")
 parser.add_argument("--parameter-group")
+parser.add_argument("--option-group")
 parser.add_argument("--allocated-storage", type=int)
 parser.add_argument("--iops", type=int)
 parser.add_argument("--binlog-retention-hours", type=int, default=24)
@@ -95,7 +96,7 @@ new_instance_params = dict(
         MasterUserPassword=args.master_user_password,
         MasterUsername=args.master_user_name,
         MultiAZ=False,  # should be False for fast import, will change later
-        OptionGroupName=source_instance['OptionGroupMemberships'][0]['OptionGroupName'],
+        OptionGroupName=args.option_group or source_instance['OptionGroupMemberships'][0]['OptionGroupName'],
         Port=source_instance['Endpoint']['Port'],
         PreferredBackupWindow=source_instance['PreferredBackupWindow'],
         PreferredMaintenanceWindow=source_instance['PreferredMaintenanceWindow'],
