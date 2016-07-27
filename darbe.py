@@ -70,15 +70,6 @@ subprocess.check_call([
         '-e', "call mysql.rds_set_configuration('binlog retention hours', %i)" % args.binlog_retention_hours,
     ])
 
-# unique string representing current second like 20160101090500
-timestamp = str(datetime.utcnow()).replace('-', '').replace(':', '').replace(' ', '')[:14]
-read_replica_instance_id = "%s-readreplica-%s" % (source_instance['DBInstanceIdentifier'], timestamp)
-print("crating read replica:", read_replica_instance_id)
-rds.create_db_instance_read_replica(DBInstanceIdentifier=read_replica_instance_id,
-                                    SourceDBInstanceIdentifier=source_instance['DBInstanceIdentifier'],
-                                    DBInstanceClass=source_instance['DBInstanceClass'],
-                                    AvailabilityZone=source_instance['AvailabilityZone'])['DBInstance']
-
 print("creating new db instance:", args.new_instance_id)
 new_instance_params = dict(
         AllocatedStorage=args.allocated_storage or source_instance['AllocatedStorage'],
@@ -112,17 +103,26 @@ if source_instance.get('MonitoringInterval', 0) > 0:
     new_instance_params['MonitoringRoleArn'] = source_instance['MonitoringRoleArn']
 rds.create_db_instance(**new_instance_params)
 
-print("waiting for read replica to become available")
-wait_db_instance_available(read_replica_instance_id)
-
-print("getting details of created read replica")
-read_replica_instance = rds.describe_db_instances(DBInstanceIdentifier=read_replica_instance_id)['DBInstances'][0]
+# unique string representing current second like 20160101090500
+timestamp = str(datetime.utcnow()).replace('-', '').replace(':', '').replace(' ', '')[:14]
+read_replica_instance_id = "%s-readreplica-%s" % (source_instance['DBInstanceIdentifier'], timestamp)
+print("crating read replica:", read_replica_instance_id)
+rds.create_db_instance_read_replica(DBInstanceIdentifier=read_replica_instance_id,
+                                    SourceDBInstanceIdentifier=source_instance['DBInstanceIdentifier'],
+                                    DBInstanceClass=source_instance['DBInstanceClass'],
+                                    AvailabilityZone=source_instance['AvailabilityZone'])['DBInstance']
 
 print("waiting for new instance to become available")
 wait_db_instance_available(args.new_instance_id)
 
 print("getting details of new instance")
 new_instance = rds.describe_db_instances(DBInstanceIdentifier=args.new_instance_id)['DBInstances'][0]
+
+print("waiting for read replica to become available")
+wait_db_instance_available(read_replica_instance_id)
+
+print("getting details of created read replica")
+read_replica_instance = rds.describe_db_instances(DBInstanceIdentifier=read_replica_instance_id)['DBInstances'][0]
 
 print("stopping replication on read replica")
 with connect_db(read_replica_instance) as cursor:
