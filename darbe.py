@@ -66,6 +66,7 @@ def wait_db_instance_available(instance_id):
 def wait_until_zero_lag(instance):
     """Blocks until replication lag is zero."""
     while True:
+        time.sleep(4)
         try:
             with connect_db(instance) as cursor:
                 cursor.execute("SHOW SLAVE STATUS")
@@ -80,8 +81,6 @@ def wait_until_zero_lag(instance):
 
             if seconds_behind_master < 1:
                 break
-
-        time.sleep(4)
 
 
 print("getting details of source instance")
