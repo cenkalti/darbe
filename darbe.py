@@ -127,7 +127,7 @@ else:
                            VpcSecurityGroupIds=security_group_ids)
 
     print("waiting for source instance to become available")
-    time.sleep(30)  # instance state does not switch to "modifying" immediately
+    time.sleep(60)  # instance state does not switch to "modifying" immediately
     wait_db_instance_available(args.source_instance_id)
 
 grants = []
@@ -316,7 +316,7 @@ if changes:
     rds.modify_db_instance(DBInstanceIdentifier=args.new_instance_id, ApplyImmediately=True, **changes)
 
     print("waiting for new instance to become available")
-    time.sleep(30)  # instance state does not switch to "modifying" immediately
+    time.sleep(60)  # instance state does not switch to "modifying" immediately
     wait_db_instance_available(args.new_instance_id)
 
     print("wating until new instance catches source instance")
