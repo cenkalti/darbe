@@ -126,6 +126,10 @@ else:
     rds.modify_db_instance(DBInstanceIdentifier=args.source_instance_id,
                            VpcSecurityGroupIds=security_group_ids)
 
+    print("waiting for source instance to become available")
+    time.sleep(30)  # instance state does not switch to "modifying" immediately
+    wait_db_instance_available(args.source_instance_id)
+
 grants = []
 if args.users:
     print("getting grants from source instance")
