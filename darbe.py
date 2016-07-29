@@ -94,7 +94,7 @@ if args.users:
             cursor.execute("SHOW GRANTS FOR %s@'%s'" % (user, host))
             for grant in cursor.fetchall():
                 grant = str(grant[0])
-                grant = grant.replace("<secret>", password)
+                grant = grant.replace("<secret>", "'%s'" % password)
                 grants.append(grant)
 
 print("setting binlog retention hours on source instance to:", args.binlog_retention_hours)
