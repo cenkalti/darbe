@@ -73,6 +73,9 @@ def wait_until_zero_lag(instance):
         else:
             seconds_behind_master = slave_status['Seconds_Behind_Master']
             print("seconds behind master:", seconds_behind_master)
+            if seconds_behind_master is None:
+                continue
+
             if seconds_behind_master < 1:
                 break
 
