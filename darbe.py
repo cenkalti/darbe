@@ -19,6 +19,7 @@ parser.add_argument("--source-instance-id", required=True)
 parser.add_argument("--master-user-name", required=True)
 parser.add_argument("--master-user-password", required=True)
 parser.add_argument("--databases", required=True)
+parser.add_argument("--users")
 parser.add_argument("--new-instance-id", required=True)
 parser.add_argument("--db-instance-class")
 parser.add_argument("--engine-version")
@@ -81,7 +82,22 @@ def wait_until_zero_lag(instance):
 print("getting details of source instance")
 source_instance = rds.describe_db_instances(DBInstanceIdentifier=args.source_instance_id)['DBInstances'][0]
 
+grants = []
+if args.users:
+    print("getting grants from source instance")
+    with connect_db(source_instance) as cursor:
+        cursor.execute("SELECT user, host, password FROM mysql.user")
+        for user, host, password in cursor.fetchall():
+            if user not in args.users.split(','):
+                continue
+
+            cursor.execute("SHOW GRANTS FOR %s@'%s'")
+            for grant in cursor.fetchall():
+                grant = grant.replace("<secret>", password)
+                grants.append(grant)
+
 print("setting binlog retention hours on source instance to:", args.binlog_retention_hours)
+# setting via mysql.connector gives an error. don't know why.
 subprocess.check_call([
     'mysql',
     '-h',
@@ -231,6 +247,11 @@ with connect_db(new_instance) as cursor:
 
     print("starting replication on new instance")
     cursor.callproc("mysql.rds_start_replication")
+
+    if grants:
+        print("creating users on new instance")
+        for grant in grants:
+            cursor.execute(grant)
 
 print("wating until new instance catches source instance")
 wait_until_zero_lag(new_instance)
