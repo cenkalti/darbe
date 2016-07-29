@@ -32,6 +32,9 @@ args = parser.parse_args()
 rds = boto3.client("rds")
 db_instance_available = rds.get_waiter('db_instance_available')
 
+# unique string representing current second like 20160101090500
+timestamp = str(datetime.utcnow()).replace('-', '').replace(':', '').replace(' ', '')[:14]
+
 
 @contextmanager
 def connect_db(instance):
@@ -59,16 +62,20 @@ def wait_db_instance_available(instance_id):
 
 def wait_until_zero_lag(instance):
     """Blocks until replication lag is zero."""
-    with connect_db(instance) as cursor:
-        while True:
-            cursor.execute("SHOW SLAVE STATUS")
-            slave_status = dict(zip(cursor.column_names, cursor.fetchone()))
+    while True:
+        try:
+            with connect_db(instance) as cursor:
+                cursor.execute("SHOW SLAVE STATUS")
+                slave_status = dict(zip(cursor.column_names, cursor.fetchone()))
+        except Exception as e:
+            print(e)
+        else:
             seconds_behind_master = slave_status['Seconds_Behind_Master']
             print("seconds behind master:", seconds_behind_master)
             if seconds_behind_master < 1:
                 break
 
-            time.sleep(4)
+        time.sleep(4)
 
 
 print("getting details of source instance")
@@ -88,6 +95,24 @@ subprocess.check_call([
     "call mysql.rds_set_configuration('binlog retention hours', %i)" % args.binlog_retention_hours,
 ])
 
+original_parameter_group = args.parameter_group or source_instance['DBParameterGroups'][0]['DBParameterGroupName']
+new_parameter_group = "%s-darbe-%s" % (original_parameter_group, timestamp)
+print("copying parameter group as:", new_parameter_group)
+rds.copy_db_parameter_group(SourceDBParameterGroupIdentifier=original_parameter_group,
+                            TargetDBParameterGroupIdentifier=new_parameter_group,
+                            TargetDBParameterGroupDescription="copied from %s then modified" % original_parameter_group)
+
+print("modifying new parameter group")
+rds.modify_db_parameter_group(DBParameterGroupName=new_parameter_group,
+                              Parameters=[
+                                  {
+                                      # makes slave sql thread run faster
+                                      'ParameterName': 'innodb_flush_trx_log_at_commit',
+                                      'ParameterValue': '2',
+                                      'ApplyMethod': 'immediate',
+                                  }
+                              ])
+
 print("creating new db instance:", args.new_instance_id)
 new_instance_params = dict(
         AllocatedStorage=args.allocated_storage or source_instance['AllocatedStorage'],
@@ -97,7 +122,7 @@ new_instance_params = dict(
         CopyTagsToSnapshot=source_instance['CopyTagsToSnapshot'],
         DBInstanceClass=args.db_instance_class or source_instance['DBInstanceClass'],
         DBInstanceIdentifier=args.new_instance_id,
-        DBParameterGroupName=args.parameter_group or source_instance['DBParameterGroups'][0]['DBParameterGroupName'],
+        DBParameterGroupName=new_parameter_group,
         DBSubnetGroupName=source_instance['DBSubnetGroup']['DBSubnetGroupName'],
         Engine=source_instance['Engine'],
         EngineVersion=args.engine_version or source_instance['EngineVersion'],
@@ -121,8 +146,6 @@ if source_instance.get('MonitoringInterval', 0) > 0:
     new_instance_params['MonitoringRoleArn'] = source_instance['MonitoringRoleArn']
 rds.create_db_instance(**new_instance_params)
 
-# unique string representing current second like 20160101090500
-timestamp = str(datetime.utcnow()).replace('-', '').replace(':', '').replace(' ', '')[:14]
 read_replica_instance_id = "%s-readreplica-%s" % (source_instance['DBInstanceIdentifier'], timestamp)
 print("crating read replica:", read_replica_instance_id)
 rds.create_db_instance_read_replica(DBInstanceIdentifier=read_replica_instance_id,
@@ -223,8 +246,7 @@ if changes:
     rds.modify_db_instance(DBInstanceIdentifier=args.new_instance_id, ApplyImmediately=True, **changes)
 
     print("waiting for new instance to become available")
-    # instance state does not switch to "modifying" immediately
-    time.sleep(30)
+    time.sleep(30)  # instance state does not switch to "modifying" immediately
     wait_db_instance_available(args.new_instance_id)
 
     print("wating until new instance catches source instance")
