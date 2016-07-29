@@ -104,13 +104,13 @@ except botocore.exceptions.ClientError as e:
 else:
     security_group_id = response['GroupId']
 
-print("modifying security group roles:", security_group_id)
+print("modifying security group rules:", security_group_id)
 try:
     ec2.authorize_security_group_ingress(GroupId=security_group_id,
                                          IpPermissions=[{'IpProtocol': 'tcp',
                                                          'FromPort': 3306,
                                                          'ToPort': 3306,
-                                                         'UserIdGroupPairs': [{'GroupId': security_group_id}]}])
+                                                         'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}])
 except botocore.exceptions.ClientError as e:
     if e.response['Error']['Code'] != 'InvalidPermission.Duplicate':
         raise
