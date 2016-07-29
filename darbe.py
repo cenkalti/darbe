@@ -1,8 +1,6 @@
 from __future__ import print_function
 
 import argparse
-import random
-import string
 import subprocess
 import time
 from datetime import datetime
@@ -37,6 +35,7 @@ db_instance_available = rds.get_waiter('db_instance_available')
 
 @contextmanager
 def connect_db(instance):
+    """Yields a cursor on a new connection to a database."""
     conn = mysql.connector.connect(user=args.master_user_name,
                                    password=args.master_user_password,
                                    host=instance['Endpoint']['Address'],
@@ -48,6 +47,7 @@ def connect_db(instance):
 
 
 def wait_db_instance_available(instance_id):
+    """Timeout on waiter cannot be changed. We keep continue to wait on timeout error."""
     while True:
         try:
             db_instance_available.wait(DBInstanceIdentifier=instance_id)
@@ -57,25 +57,43 @@ def wait_db_instance_available(instance_id):
             break
 
 
+def wait_until_zero_lag(instance):
+    """Blocks until replication lag is zero."""
+    with connect_db(instance) as cursor:
+        while True:
+            cursor.execute("SHOW SLAVE STATUS")
+            slave_status = dict(zip(cursor.column_names, cursor.fetchone()))
+            seconds_behind_master = slave_status['Seconds_Behind_Master']
+            print("seconds behind master:", seconds_behind_master)
+            if seconds_behind_master < 1:
+                break
+
+            time.sleep(4)
+
+
 print("getting details of source instance")
 source_instance = rds.describe_db_instances(DBInstanceIdentifier=args.source_instance_id)['DBInstances'][0]
 
 print("setting binlog retention hours on source instance to:", args.binlog_retention_hours)
 subprocess.check_call([
-        'mysql',
-        '-h', source_instance['Endpoint']['Address'],
-        '-P', str(source_instance['Endpoint']['Port']),
-        '-u', args.master_user_name,
-        '-p%s' % args.master_user_password,
-        '-e', "call mysql.rds_set_configuration('binlog retention hours', %i)" % args.binlog_retention_hours,
-    ])
+    'mysql',
+    '-h',
+    source_instance['Endpoint']['Address'],
+    '-P',
+    str(source_instance['Endpoint']['Port']),
+    '-u',
+    args.master_user_name,
+    '-p%s' % args.master_user_password,
+    '-e',
+    "call mysql.rds_set_configuration('binlog retention hours', %i)" % args.binlog_retention_hours,
+])
 
 print("creating new db instance:", args.new_instance_id)
 new_instance_params = dict(
         AllocatedStorage=args.allocated_storage or source_instance['AllocatedStorage'],
         AutoMinorVersionUpgrade=source_instance['AutoMinorVersionUpgrade'],
         AvailabilityZone=source_instance['AvailabilityZone'],
-        BackupRetentionPeriod=0,  # should be disabled for fast import, enable manually after operation completes
+        BackupRetentionPeriod=0,  # should be disabled for fast import, will be enabled after import
         CopyTagsToSnapshot=source_instance['CopyTagsToSnapshot'],
         DBInstanceClass=args.db_instance_class or source_instance['DBInstanceClass'],
         DBInstanceIdentifier=args.new_instance_id,
@@ -87,7 +105,7 @@ new_instance_params = dict(
         MasterUserPassword=args.master_user_password,
         MasterUsername=args.master_user_name,
         OptionGroupName=args.option_group or source_instance['OptionGroupMemberships'][0]['OptionGroupName'],
-        MultiAZ=False,  # should be disabled for fast import, enable manually after operation completes
+        MultiAZ=False,  # should be disabled for fast import, will be enabled after import
         Port=source_instance['Endpoint']['Port'],
         PreferredBackupWindow=source_instance['PreferredBackupWindow'],
         PreferredMaintenanceWindow=source_instance['PreferredMaintenanceWindow'],
@@ -137,27 +155,35 @@ with connect_db(read_replica_instance) as cursor:
 
 print("dumping data from read replica")
 dump_args = [
-        'mysqldump',
-        '-h', read_replica_instance['Endpoint']['Address'],
-        '-P', str(read_replica_instance['Endpoint']['Port']),
-        '-u', args.master_user_name,
-        '-p%s' % args.master_user_password,
-        '--single-transaction',
-        '--order-by-primary',
-        '--databases',
-    ]
+    'mysqldump',
+    '-h',
+    read_replica_instance['Endpoint']['Address'],
+    '-P',
+    str(read_replica_instance['Endpoint']['Port']),
+    '-u',
+    args.master_user_name,
+    '-p%s' % args.master_user_password,
+    '--single-transaction',
+    '--order-by-primary',
+    '--databases',
+]
 dump_args.extend(args.databases.split(','))
 dump = subprocess.Popen(dump_args, stdout=subprocess.PIPE)
 
 print("loading data to new instance")
-load = subprocess.Popen([
+load = subprocess.Popen(
+    [
         'mysql',
-        '-h', new_instance['Endpoint']['Address'],
-        '-P', str(new_instance['Endpoint']['Port']),
-        '-u', args.master_user_name,
+        '-h',
+        new_instance['Endpoint']['Address'],
+        '-P',
+        str(new_instance['Endpoint']['Port']),
+        '-u',
+        args.master_user_name,
         '-p%s' % args.master_user_password,
         '-f',
-    ], stdin=dump.stdout)
+    ],
+    stdin=dump.stdout)
 
 print("waiting for data transfer to finish")
 load.wait()
@@ -170,30 +196,21 @@ print("print deleting read replica instance")
 rds.delete_db_instance(DBInstanceIdentifier=read_replica_instance_id, SkipFinalSnapshot=True)
 
 print("creating replication user on source instance")
-repl_user_name = "darbe"
-repl_password = ''.join(random.SystemRandom().choice(string.ascii_letters + string.digits) for _ in range(20))
 with connect_db(source_instance) as cursor:
-    cursor.execute("GRANT REPLICATION SLAVE ON *.* TO '%s'@'%%' IDENTIFIED BY '%s'" % (repl_user_name, repl_password))
+    cursor.execute("GRANT REPLICATION SLAVE ON *.* TO '%s'@'%%' IDENTIFIED BY '%s'" %
+                   (args.master_user_name, args.master_user_password))
 
 print("setting master on new instance")
 with connect_db(new_instance) as cursor:
     cursor.callproc("mysql.rds_set_external_master",
-                    (source_instance['Endpoint']['Address'], source_instance['Endpoint']['Port'], repl_user_name,
-                     repl_password, binlog_filename, binlog_position, 0))
+                    (source_instance['Endpoint']['Address'], source_instance['Endpoint']['Port'], args.master_user_name,
+                     args.master_user_password, binlog_filename, binlog_position, 0))
 
     print("starting replication on new instance")
     cursor.callproc("mysql.rds_start_replication")
 
-    print("wating until new instance catches source instance")
-    while True:
-        cursor.execute("SHOW SLAVE STATUS")
-        slave_status = dict(zip(cursor.column_names, cursor.fetchone()))
-        seconds_behind_master = slave_status['Seconds_Behind_Master']
-        print("seconds behind master:", seconds_behind_master)
-        if seconds_behind_master < 1:
-            break
-
-        time.sleep(4)
+print("wating until new instance catches source instance")
+wait_until_zero_lag(new_instance)
 
 changes = {}
 if source_instance['BackupRetentionPeriod'] > 0:
@@ -204,5 +221,13 @@ if source_instance['MultiAZ']:
 if changes:
     print("modifying new instance last time")
     rds.modify_db_instance(DBInstanceIdentifier=args.new_instance_id, ApplyImmediately=True, **changes)
+
+    print("waiting for new instance to become available")
+    # instance state does not switch to "modifying" immediately
+    time.sleep(30)
+    wait_db_instance_available(args.new_instance_id)
+
+    print("wating until new instance catches source instance")
+    wait_until_zero_lag(new_instance)
 
 print("all done")
