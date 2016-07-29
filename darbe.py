@@ -107,7 +107,7 @@ rds.modify_db_parameter_group(DBParameterGroupName=new_parameter_group,
                               Parameters=[
                                   {
                                       # makes slave sql thread run faster
-                                      'ParameterName': 'innodb_flush_trx_log_at_commit',
+                                      'ParameterName': 'innodb_flush_log_at_trx_commit',
                                       'ParameterValue': '2',
                                       'ApplyMethod': 'immediate',
                                   }
