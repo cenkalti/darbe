@@ -122,7 +122,7 @@ if security_group_id in security_group_ids:
     print("replication security group is already attached to the source instance")
 else:
     print("adding replication security group to the source instance")
-    security_group_ids = list(set(security_group_ids))
+    security_group_ids.append(security_group_id)
     rds.modify_db_instance(DBInstanceIdentifier=args.source_instance_id,
                            VpcSecurityGroupIds=security_group_ids)
 
