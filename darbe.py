@@ -91,8 +91,9 @@ if args.users:
             if user not in args.users.split(','):
                 continue
 
-            cursor.execute("SHOW GRANTS FOR %s@'%s'")
+            cursor.execute("SHOW GRANTS FOR %s@'%s'" % (user, host))
             for grant in cursor.fetchall():
+                grant = str(grant[0])
                 grant = grant.replace("<secret>", password)
                 grants.append(grant)
 
