@@ -30,7 +30,9 @@ parser.add_argument("--iops", type=int)
 parser.add_argument("--binlog-retention-hours", type=int, default=24)
 args = parser.parse_args()
 
-rds = boto3.client("rds")
+rds = boto3.client('rds')
+ec2 = boto3.client('ec2')
+
 db_instance_available = rds.get_waiter('db_instance_available')
 
 # unique string representing current second like 20160101090500
@@ -84,6 +86,46 @@ def wait_until_zero_lag(instance):
 
 print("getting details of source instance")
 source_instance = rds.describe_db_instances(DBInstanceIdentifier=args.source_instance_id)['DBInstances'][0]
+
+print("creating replication security group")
+vpc_id = source_instance['DBSubnetGroup']['VpcId']
+try:
+    response = ec2.create_security_group(GroupName="darbe-replication",
+                                         VpcId=vpc_id,
+                                         Description="created by darbe for replication between instances")
+except botocore.exceptions.ClientError as e:
+    if e.response['Error']['Code'] != 'InvalidGroup.Duplicate':
+        raise
+
+    print("security group already exists")
+    security_group_id = ec2.describe_security_groups(
+        Filters=[{'Name': 'vpc-id',
+                  "Values": [vpc_id]}, {'Name': 'group-name',
+                                                'Values': ['darbe-replication']}])['SecurityGroups'][0]['GroupId']
+else:
+    security_group_id = response['GroupId']
+
+print("modifying security group roles:", security_group_id)
+try:
+    ec2.authorize_security_group_ingress(GroupId=security_group_id,
+                                         IpPermissions=[{'IpProtocol': 'tcp',
+                                                         'FromPort': 3306,
+                                                         'ToPort': 3306,
+                                                         'UserIdGroupPairs': [{'GroupId': security_group_id}]}])
+except botocore.exceptions.ClientError as e:
+    if e.response['Error']['Code'] != 'InvalidPermission.Duplicate':
+        raise
+
+    print("security group permission already exists")
+
+security_group_ids = [g['VpcSecurityGroupId'] for g in source_instance['VpcSecurityGroups']]
+if security_group_id in security_group_ids:
+    print("replication security group is already attached to the source instance")
+else:
+    print("adding replication security group to the source instance")
+    security_group_ids = list(set(security_group_ids))
+    rds.modify_db_instance(DBInstanceIdentifier=args.source_instance_id,
+                           VpcSecurityGroupIds=security_group_ids)
 
 grants = []
 if args.users:
@@ -157,7 +199,7 @@ new_instance_params = dict(
         PubliclyAccessible=source_instance['PubliclyAccessible'],
         StorageEncrypted=source_instance['StorageEncrypted'],
         StorageType=source_instance['StorageType'],
-        VpcSecurityGroupIds=[g['VpcSecurityGroupId'] for g in source_instance['VpcSecurityGroups']],
+        VpcSecurityGroupIds=security_group_ids,
     )
 if source_instance.get('Iops', 0) > 0:
     new_instance_params['Iops'] = args.iops or source_instance['Iops']
