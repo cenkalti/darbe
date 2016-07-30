@@ -169,13 +169,19 @@ rds.copy_db_parameter_group(SourceDBParameterGroupIdentifier=original_parameter_
 
 print("modifying new parameter group")
 rds.modify_db_parameter_group(DBParameterGroupName=new_parameter_group,
+                              # these parameters makes slave sql thread run faster,
+                              # otherwise slave may not catch up with the master for write intensive load.
                               Parameters=[
                                   {
-                                      # makes slave sql thread run faster
                                       'ParameterName': 'innodb_flush_log_at_trx_commit',
                                       'ParameterValue': '2',
                                       'ApplyMethod': 'immediate',
-                                  }
+                                  },
+                                  {
+                                      'ParameterName': 'sync_binlog',
+                                      'ParameterValue': '0',
+                                      'ApplyMethod': 'immediate',
+                                  },
                               ])
 
 print("creating new db instance:", args.new_instance_id)
