@@ -15,6 +15,7 @@ subprocess.check_call(['which', 'mysqldump'])
 subprocess.check_call(['which', 'mysql'])
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--region", required=True)
 parser.add_argument("--source-instance-id", required=True)
 parser.add_argument("--master-user-name", required=True)
 parser.add_argument("--master-user-password", required=True)
@@ -30,8 +31,8 @@ parser.add_argument("--iops", type=int)
 parser.add_argument("--binlog-retention-hours", type=int, default=24)
 args = parser.parse_args()
 
-rds = boto3.client('rds')
-ec2 = boto3.client('ec2')
+rds = boto3.client('rds', region_name=args.region)
+ec2 = boto3.client('ec2', region_name=args.region)
 
 db_instance_available = rds.get_waiter('db_instance_available')
 
