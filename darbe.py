@@ -10,10 +10,6 @@ import boto3
 import botocore.exceptions
 import mysql.connector
 
-print("checking required programs")
-subprocess.check_call(['which', 'mysqldump'])
-subprocess.check_call(['which', 'mysql'])
-
 parser = argparse.ArgumentParser()
 parser.add_argument("--region", required=True)
 parser.add_argument("--source-instance-id", required=True)
@@ -30,6 +26,10 @@ parser.add_argument("--allocated-storage", type=int)
 parser.add_argument("--iops", type=int)
 parser.add_argument("--binlog-retention-hours", type=int, default=24)
 args = parser.parse_args()
+
+print("checking required programs")
+subprocess.check_call(['which', 'mysqldump'])
+subprocess.check_call(['which', 'mysql'])
 
 rds = boto3.client('rds', region_name=args.region)
 ec2 = boto3.client('ec2', region_name=args.region)
