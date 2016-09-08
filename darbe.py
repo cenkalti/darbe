@@ -3,6 +3,7 @@ from __future__ import print_function
 import argparse
 import subprocess
 import time
+import re
 from datetime import datetime
 from contextlib import closing, contextmanager
 
@@ -162,7 +163,11 @@ subprocess.check_call([
 ])
 
 original_parameter_group = args.parameter_group or source_instance['DBParameterGroups'][0]['DBParameterGroupName']
-new_parameter_group = "%s-darbe-%s" % (original_parameter_group, timestamp)
+match = re.match('.+-darbe-(\d+)', original_parameter_group)
+if match:
+    new_parameter_group = original_parameter_group.replace(match.groups()[0], timestamp)
+else:
+    new_parameter_group = "%s-darbe-%s" % (original_parameter_group, timestamp)
 print("copying parameter group as:", new_parameter_group)
 rds.copy_db_parameter_group(SourceDBParameterGroupIdentifier=original_parameter_group,
                             TargetDBParameterGroupIdentifier=new_parameter_group,
