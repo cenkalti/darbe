@@ -102,7 +102,7 @@ except botocore.exceptions.ClientError as e:
     security_group_id = ec2.describe_security_groups(
         Filters=[{'Name': 'vpc-id',
                   "Values": [vpc_id]}, {'Name': 'group-name',
-                                                'Values': ['darbe-replication']}])['SecurityGroups'][0]['GroupId']
+                                        'Values': ['darbe-replication']}])['SecurityGroups'][0]['GroupId']
 else:
     security_group_id = response['GroupId']
 
@@ -125,8 +125,7 @@ if security_group_id in security_group_ids:
 else:
     print("adding replication security group to the source instance")
     security_group_ids.append(security_group_id)
-    rds.modify_db_instance(DBInstanceIdentifier=args.source_instance_id,
-                           VpcSecurityGroupIds=security_group_ids)
+    rds.modify_db_instance(DBInstanceIdentifier=args.source_instance_id, VpcSecurityGroupIds=security_group_ids)
 
     print("waiting for source instance to become available")
     time.sleep(60)  # instance state does not switch to "modifying" immediately
@@ -174,21 +173,22 @@ rds.copy_db_parameter_group(SourceDBParameterGroupIdentifier=original_parameter_
                             TargetDBParameterGroupDescription="copied from %s then modified" % original_parameter_group)
 
 print("modifying new parameter group")
-rds.modify_db_parameter_group(DBParameterGroupName=new_parameter_group,
-                              # these parameters makes slave sql thread run faster,
-                              # otherwise slave may not catch up with the master for write intensive load.
-                              Parameters=[
-                                  {
-                                      'ParameterName': 'innodb_flush_log_at_trx_commit',
-                                      'ParameterValue': '2',
-                                      'ApplyMethod': 'immediate',
-                                  },
-                                  {
-                                      'ParameterName': 'sync_binlog',
-                                      'ParameterValue': '0',
-                                      'ApplyMethod': 'immediate',
-                                  },
-                              ])
+rds.modify_db_parameter_group(
+    DBParameterGroupName=new_parameter_group,
+    # these parameters makes slave sql thread run faster,
+    # otherwise slave may not catch up with the master for write intensive load.
+    Parameters=[
+        {
+            'ParameterName': 'innodb_flush_log_at_trx_commit',
+            'ParameterValue': '2',
+            'ApplyMethod': 'immediate',
+        },
+        {
+            'ParameterName': 'sync_binlog',
+            'ParameterValue': '0',
+            'ApplyMethod': 'immediate',
+        },
+    ])
 
 print("creating new db instance:", args.new_instance_id)
 new_instance_params = dict(
