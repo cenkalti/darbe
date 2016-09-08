@@ -12,20 +12,33 @@ import botocore.exceptions
 import mysql.connector
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--region", required=True)
-parser.add_argument("--source-instance-id", required=True)
-parser.add_argument("--master-user-name", required=True)
-parser.add_argument("--master-user-password", required=True)
-parser.add_argument("--databases", required=True)
-parser.add_argument("--users")
-parser.add_argument("--new-instance-id", required=True)
-parser.add_argument("--db-instance-class")
-parser.add_argument("--engine-version")
-parser.add_argument("--parameter-group")
-parser.add_argument("--option-group")
-parser.add_argument("--allocated-storage", type=int)
-parser.add_argument("--iops", type=int)
-parser.add_argument("--binlog-retention-hours", type=int, default=24)
+parser.add_argument("--region", required=True, help="AWS region name")
+parser.add_argument("--source-instance-id",
+                    required=True,
+                    help="name of the existing instance (This is going to be master when replication is setup.)")
+parser.add_argument("--new-instance-id", required=True, help="name of the slave instance that is going to be created")
+parser.add_argument("--master-user-name",
+                    required=True,
+                    help="master username of instance specified with --source-instance-id")
+parser.add_argument("--master-user-password",
+                    required=True,
+                    help="master user password of instance specified with --source-instance-id")
+parser.add_argument("--databases", required=True, help="comma separated database names that need to be copied to slave")
+parser.add_argument("--users", help="comma separated user names that need to be copied to slave")
+parser.add_argument("--db-instance-class", help="set it if you want different instance class on slave")
+parser.add_argument("--engine-version", help="set it if you want different engine version on slave")
+parser.add_argument("--parameter-group", help="set it if you want different parameter group on slave")
+parser.add_argument("--option-group", help="set it if you want different option group on slave")
+parser.add_argument("--allocated-storage", type=int, help="set it if you want to grow/shrink storage space on slave")
+parser.add_argument("--iops",
+                    type=int,
+                    help="set it if you want different IOPS on slave (must be valid for given --allocated-storage)")
+parser.add_argument(
+    "--binlog-retention-hours",
+    type=int,
+    default=24,
+    help="Darbe set 'binlog retention hours' on master to allow enough time for copying data between instances."
+    "Increase if your data is too big so that it cannot be copied in 24 hours.")
 args = parser.parse_args()
 
 print("checking required programs")
