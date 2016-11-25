@@ -4,7 +4,7 @@ from setuptools import setup
 
 setup(
     name='Darbe',
-    version='1.0.2',
+    version='1.1.0',
     author=u'Cenk Altı',
     author_email='cenkalti@gmail.com',
     keywords='mysql rds migration database replication slave',
