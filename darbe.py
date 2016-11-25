@@ -25,6 +25,7 @@ parser.add_argument("--master-user-password",
                     help="master user password of instance specified with --source-instance-id")
 parser.add_argument("--databases", required=True, help="comma separated database names that need to be copied to slave")
 parser.add_argument("--users", help="comma separated user names that need to be copied to slave")
+parser.add_argument("--availability-zone", help="set it if you want slave on different availability zone")
 parser.add_argument("--db-instance-class", help="set it if you want different instance class on slave")
 parser.add_argument("--engine-version", help="set it if you want different engine version on slave")
 parser.add_argument("--parameter-group", help="set it if you want different parameter group on slave")
@@ -207,7 +208,7 @@ print("creating new db instance:", args.new_instance_id)
 new_instance_params = dict(
         AllocatedStorage=args.allocated_storage or source_instance['AllocatedStorage'],
         AutoMinorVersionUpgrade=source_instance['AutoMinorVersionUpgrade'],
-        AvailabilityZone=source_instance['AvailabilityZone'],
+        AvailabilityZone=args.availability_zone or source_instance['AvailabilityZone'],
         BackupRetentionPeriod=0,  # should be disabled for fast import, will be enabled after import
         CopyTagsToSnapshot=source_instance['CopyTagsToSnapshot'],
         DBInstanceClass=args.db_instance_class or source_instance['DBInstanceClass'],
