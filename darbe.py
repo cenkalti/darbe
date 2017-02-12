@@ -149,7 +149,15 @@ grants = []
 if args.users:
     print("getting grants from source instance")
     with connect_db(source_instance) as cursor:
-        cursor.execute("SELECT user, host, password FROM mysql.user")
+        cursor.execute("SELECT VERSION()")
+        version = cursor.fetchone()[0]
+        match = re.match('(\d+)\.(\d+)\.(\d+)', version)
+        version = tuple(map(int, match.groups()))
+        if version < (5, 7, 6):
+            sql = "SELECT User, Host, Password FROM mysql.user"
+        else:
+            sql = "SELECT User, Host, HEX(authentication_string) FROM mysql.user"
+        cursor.execute(sql)
         for user, host, password in cursor.fetchall():
             if user not in args.users.split(','):
                 continue
