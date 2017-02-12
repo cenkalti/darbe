@@ -17,7 +17,7 @@ setup(
     description='RDS MySQL replication setup tool',
     entry_points={
         'console_scripts': [
-            'darbe = darbe',
+            'darbe = darbe.main',
         ],
     },
 )
