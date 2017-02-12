@@ -4,7 +4,7 @@ from setuptools import setup
 
 setup(
     name='Darbe',
-    version='1.1.1',
+    version='1.1.2',
     author=u'Cenk Altı',
     author_email='cenkalti@gmail.com',
     keywords='mysql rds migration database replication slave',
@@ -17,7 +17,7 @@ setup(
     description='RDS MySQL replication setup tool',
     entry_points={
         'console_scripts': [
-            'darbe = darbe.main',
+            'darbe = darbe:main',
         ],
     },
 )
