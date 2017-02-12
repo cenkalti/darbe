@@ -15,27 +15,32 @@ import mysql.connector
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--region", required=True, help="AWS region name")
-    parser.add_argument("--source-instance-id",
-                        required=True,
-                        help="name of the existing instance (This is going to be master when replication is setup.)")
-    parser.add_argument("--new-instance-id", required=True, help="name of the slave instance that is going to be created")
-    parser.add_argument("--master-user-name",
-                        required=True,
-                        help="master username of instance specified with --source-instance-id")
-    parser.add_argument("--master-user-password",
-                        required=True,
-                        help="master user password of instance specified with --source-instance-id")
-    parser.add_argument("--databases", required=True, help="comma separated database names that need to be copied to slave")
+    parser.add_argument(
+        "--source-instance-id",
+        required=True,
+        help="name of the existing instance (This is going to be master when replication is setup.)")
+    parser.add_argument(
+        "--new-instance-id", required=True, help="name of the slave instance that is going to be created")
+    parser.add_argument(
+        "--master-user-name", required=True, help="master username of instance specified with --source-instance-id")
+    parser.add_argument(
+        "--master-user-password",
+        required=True,
+        help="master user password of instance specified with --source-instance-id")
+    parser.add_argument(
+        "--databases", required=True, help="comma separated database names that need to be copied to slave")
     parser.add_argument("--users", help="comma separated user names that need to be copied to slave")
     parser.add_argument("--availability-zone", help="set it if you want slave on different availability zone")
     parser.add_argument("--db-instance-class", help="set it if you want different instance class on slave")
     parser.add_argument("--engine-version", help="set it if you want different engine version on slave")
     parser.add_argument("--parameter-group", help="set it if you want different parameter group on slave")
     parser.add_argument("--option-group", help="set it if you want different option group on slave")
-    parser.add_argument("--allocated-storage", type=int, help="set it if you want to grow/shrink storage space on slave")
-    parser.add_argument("--iops",
-                        type=int,
-                        help="set it if you want different IOPS on slave (must be valid for given --allocated-storage)")
+    parser.add_argument(
+        "--allocated-storage", type=int, help="set it if you want to grow/shrink storage space on slave")
+    parser.add_argument(
+        "--iops",
+        type=int,
+        help="set it if you want different IOPS on slave (must be valid for given --allocated-storage)")
     parser.add_argument(
         "--binlog-retention-hours",
         type=int,
@@ -56,19 +61,18 @@ def main():
     # unique string representing current second like 20160101090500
     timestamp = str(datetime.utcnow()).replace('-', '').replace(':', '').replace(' ', '')[:14]
 
-
     @contextmanager
     def connect_db(instance):
         """Yields a cursor on a new connection to a database."""
-        conn = mysql.connector.connect(user=args.master_user_name,
-                                       password=args.master_user_password,
-                                       host=instance['Endpoint']['Address'],
-                                       port=instance['Endpoint']['Port'])
+        conn = mysql.connector.connect(
+            user=args.master_user_name,
+            password=args.master_user_password,
+            host=instance['Endpoint']['Address'],
+            port=instance['Endpoint']['Port'])
         with closing(conn):
             cursor = conn.cursor()
             with closing(cursor):
                 yield cursor
-
 
     def wait_db_instance_available(instance_id):
         """Timeout on waiter cannot be changed. We keep continue to wait on timeout error."""
@@ -79,7 +83,6 @@ def main():
                 continue
             else:
                 break
-
 
     def wait_until_zero_lag(instance):
         """Blocks until replication lag is zero."""
@@ -100,35 +103,43 @@ def main():
                 if seconds_behind_master < 1:
                     break
 
-
     print("getting details of source instance")
     source_instance = rds.describe_db_instances(DBInstanceIdentifier=args.source_instance_id)['DBInstances'][0]
 
     print("creating replication security group")
     vpc_id = source_instance['DBSubnetGroup']['VpcId']
     try:
-        response = ec2.create_security_group(GroupName="darbe-replication",
-                                             VpcId=vpc_id,
-                                             Description="created by darbe for replication between instances")
+        response = ec2.create_security_group(
+            GroupName="darbe-replication",
+            VpcId=vpc_id,
+            Description="created by darbe for replication between instances")
     except botocore.exceptions.ClientError as e:
         if e.response['Error']['Code'] != 'InvalidGroup.Duplicate':
             raise
 
         print("security group already exists")
-        security_group_id = ec2.describe_security_groups(
-            Filters=[{'Name': 'vpc-id',
-                      "Values": [vpc_id]}, {'Name': 'group-name',
-                                            'Values': ['darbe-replication']}])['SecurityGroups'][0]['GroupId']
+        security_group_id = ec2.describe_security_groups(Filters=[{
+            'Name': 'vpc-id',
+            "Values": [vpc_id]
+        }, {
+            'Name': 'group-name',
+            'Values': ['darbe-replication']
+        }])['SecurityGroups'][0]['GroupId']
     else:
         security_group_id = response['GroupId']
 
     print("modifying security group rules:", security_group_id)
     try:
-        ec2.authorize_security_group_ingress(GroupId=security_group_id,
-                                             IpPermissions=[{'IpProtocol': 'tcp',
-                                                             'FromPort': 3306,
-                                                             'ToPort': 3306,
-                                                             'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}])
+        ec2.authorize_security_group_ingress(
+            GroupId=security_group_id,
+            IpPermissions=[{
+                'IpProtocol': 'tcp',
+                'FromPort': 3306,
+                'ToPort': 3306,
+                'IpRanges': [{
+                    'CidrIp': '0.0.0.0/0'
+                }]
+            }])
     except botocore.exceptions.ClientError as e:
         if e.response['Error']['Code'] != 'InvalidPermission.Duplicate':
             raise
@@ -192,9 +203,10 @@ def main():
     else:
         new_parameter_group = "%s-darbe-%s" % (original_parameter_group, timestamp)
     print("copying parameter group as:", new_parameter_group)
-    rds.copy_db_parameter_group(SourceDBParameterGroupIdentifier=original_parameter_group,
-                                TargetDBParameterGroupIdentifier=new_parameter_group,
-                                TargetDBParameterGroupDescription="copied from %s then modified" % original_parameter_group)
+    rds.copy_db_parameter_group(
+        SourceDBParameterGroupIdentifier=original_parameter_group,
+        TargetDBParameterGroupIdentifier=new_parameter_group,
+        TargetDBParameterGroupDescription="copied from %s then modified" % original_parameter_group)
 
     print("modifying new parameter group")
     rds.modify_db_parameter_group(
@@ -216,30 +228,29 @@ def main():
 
     print("creating new db instance:", args.new_instance_id)
     new_instance_params = dict(
-            AllocatedStorage=args.allocated_storage or source_instance['AllocatedStorage'],
-            AutoMinorVersionUpgrade=source_instance['AutoMinorVersionUpgrade'],
-            AvailabilityZone=args.availability_zone or source_instance['AvailabilityZone'],
-            BackupRetentionPeriod=0,  # should be disabled for fast import, will be enabled after import
-            CopyTagsToSnapshot=source_instance['CopyTagsToSnapshot'],
-            DBInstanceClass=args.db_instance_class or source_instance['DBInstanceClass'],
-            DBInstanceIdentifier=args.new_instance_id,
-            DBParameterGroupName=new_parameter_group,
-            DBSubnetGroupName=source_instance['DBSubnetGroup']['DBSubnetGroupName'],
-            Engine=source_instance['Engine'],
-            EngineVersion=args.engine_version or source_instance['EngineVersion'],
-            LicenseModel=source_instance['LicenseModel'],
-            MasterUserPassword=args.master_user_password,
-            MasterUsername=args.master_user_name,
-            OptionGroupName=args.option_group or source_instance['OptionGroupMemberships'][0]['OptionGroupName'],
-            MultiAZ=False,  # should be disabled for fast import, will be enabled after import
-            Port=source_instance['Endpoint']['Port'],
-            PreferredBackupWindow=source_instance['PreferredBackupWindow'],
-            PreferredMaintenanceWindow=source_instance['PreferredMaintenanceWindow'],
-            PubliclyAccessible=source_instance['PubliclyAccessible'],
-            StorageEncrypted=source_instance['StorageEncrypted'],
-            StorageType=source_instance['StorageType'],
-            VpcSecurityGroupIds=security_group_ids,
-        )
+        AllocatedStorage=args.allocated_storage or source_instance['AllocatedStorage'],
+        AutoMinorVersionUpgrade=source_instance['AutoMinorVersionUpgrade'],
+        AvailabilityZone=args.availability_zone or source_instance['AvailabilityZone'],
+        BackupRetentionPeriod=0,  # should be disabled for fast import, will be enabled after import
+        CopyTagsToSnapshot=source_instance['CopyTagsToSnapshot'],
+        DBInstanceClass=args.db_instance_class or source_instance['DBInstanceClass'],
+        DBInstanceIdentifier=args.new_instance_id,
+        DBParameterGroupName=new_parameter_group,
+        DBSubnetGroupName=source_instance['DBSubnetGroup']['DBSubnetGroupName'],
+        Engine=source_instance['Engine'],
+        EngineVersion=args.engine_version or source_instance['EngineVersion'],
+        LicenseModel=source_instance['LicenseModel'],
+        MasterUserPassword=args.master_user_password,
+        MasterUsername=args.master_user_name,
+        OptionGroupName=args.option_group or source_instance['OptionGroupMemberships'][0]['OptionGroupName'],
+        MultiAZ=False,  # should be disabled for fast import, will be enabled after import
+        Port=source_instance['Endpoint']['Port'],
+        PreferredBackupWindow=source_instance['PreferredBackupWindow'],
+        PreferredMaintenanceWindow=source_instance['PreferredMaintenanceWindow'],
+        PubliclyAccessible=source_instance['PubliclyAccessible'],
+        StorageEncrypted=source_instance['StorageEncrypted'],
+        StorageType=source_instance['StorageType'],
+        VpcSecurityGroupIds=security_group_ids, )
     if source_instance.get('Iops', 0) > 0:
         new_instance_params['Iops'] = args.iops or source_instance['Iops']
     if source_instance.get('MonitoringInterval', 0) > 0:
@@ -249,10 +260,11 @@ def main():
 
     read_replica_instance_id = "%s-readreplica-%s" % (source_instance['DBInstanceIdentifier'], timestamp)
     print("crating read replica:", read_replica_instance_id)
-    rds.create_db_instance_read_replica(DBInstanceIdentifier=read_replica_instance_id,
-                                        SourceDBInstanceIdentifier=source_instance['DBInstanceIdentifier'],
-                                        DBInstanceClass=source_instance['DBInstanceClass'],
-                                        AvailabilityZone=source_instance['AvailabilityZone'])['DBInstance']
+    rds.create_db_instance_read_replica(
+        DBInstanceIdentifier=read_replica_instance_id,
+        SourceDBInstanceIdentifier=source_instance['DBInstanceIdentifier'],
+        DBInstanceClass=source_instance['DBInstanceClass'],
+        AvailabilityZone=source_instance['AvailabilityZone'])['DBInstance']
 
     print("waiting for new instance to become available")
     wait_db_instance_available(args.new_instance_id)
@@ -327,8 +339,8 @@ def main():
     print("setting master on new instance")
     with connect_db(new_instance) as cursor:
         cursor.callproc("mysql.rds_set_external_master",
-                        (source_instance['Endpoint']['Address'], source_instance['Endpoint']['Port'], args.master_user_name,
-                         args.master_user_password, binlog_filename, binlog_position, 0))
+                        (source_instance['Endpoint']['Address'], source_instance['Endpoint']['Port'],
+                         args.master_user_name, args.master_user_password, binlog_filename, binlog_position, 0))
 
         print("starting replication on new instance")
         cursor.callproc("mysql.rds_start_replication")
