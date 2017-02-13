@@ -328,7 +328,7 @@ def main():
     assert dump.returncode == 0
     print("data transfer is finished")
 
-    print("print deleting read replica instance")
+    print("deleting read replica instance")
     rds.delete_db_instance(DBInstanceIdentifier=read_replica_instance_id, SkipFinalSnapshot=True)
 
     print("creating replication user on source instance")
