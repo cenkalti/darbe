@@ -52,12 +52,13 @@ def main():
     args = parser.parse_args()
 
     stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(logging.DEBUG)
     logger.addHandler(stream_handler)
 
     if args.debug:
-        stream_handler.setLevel(logging.DEBUG)
+        logger.setLevel(logging.DEBUG)
     else:
-        stream_handler.setLevel(logging.INFO)
+        logger.setLevel(logging.INFO)
 
     logger.info("checking required programs")
     subprocess.check_call(['which', 'mysqldump'])
@@ -106,7 +107,7 @@ def main():
                 logger.error(e)
             else:
                 seconds_behind_master = slave_status['Seconds_Behind_Master']
-                logger.info("seconds behind master:", seconds_behind_master)
+                logger.info("seconds behind master: %d", seconds_behind_master)
                 if seconds_behind_master is None:
                     continue
 
@@ -138,7 +139,7 @@ def main():
     else:
         security_group_id = response['GroupId']
 
-    logger.info("modifying security group rules:", security_group_id)
+    logger.info("modifying security group rules: %s", security_group_id)
     try:
         ec2.authorize_security_group_ingress(
             GroupId=security_group_id,
@@ -191,7 +192,7 @@ def main():
                     grant = grant.replace("<secret>", "'%s'" % password)
                     grants.append(grant)
 
-    logger.info("setting binlog retention hours on source instance to:", args.binlog_retention_hours)
+    logger.info("setting binlog retention hours on source instance to: %s", args.binlog_retention_hours)
     # setting via mysql.connector gives an error. don't know why.
     subprocess.check_call([
         'mysql',
@@ -213,7 +214,7 @@ def main():
         new_parameter_group = original_parameter_group.replace(match.groups()[0], timestamp)
     else:
         new_parameter_group = "%s-darbe-%s" % (original_parameter_group, timestamp)
-    logger.info("copying parameter group as:", new_parameter_group)
+    logger.info("copying parameter group as: %s", new_parameter_group)
     rds.copy_db_parameter_group(
         SourceDBParameterGroupIdentifier=original_parameter_group,
         TargetDBParameterGroupIdentifier=new_parameter_group,
@@ -237,7 +238,7 @@ def main():
             },
         ])
 
-    logger.info("creating new db instance:", args.new_instance_id)
+    logger.info("creating new db instance: %s", args.new_instance_id)
     new_instance_params = dict(
         AllocatedStorage=args.allocated_storage or source_instance['AllocatedStorage'],
         AutoMinorVersionUpgrade=source_instance['AutoMinorVersionUpgrade'],
@@ -270,7 +271,7 @@ def main():
     rds.create_db_instance(**new_instance_params)
 
     read_replica_instance_id = "%s-readreplica-%s" % (source_instance['DBInstanceIdentifier'], timestamp)
-    logger.info("crating read replica:", read_replica_instance_id)
+    logger.info("crating read replica: %s", read_replica_instance_id)
     rds.create_db_instance_read_replica(
         DBInstanceIdentifier=read_replica_instance_id,
         SourceDBInstanceIdentifier=source_instance['DBInstanceIdentifier'],
@@ -298,7 +299,7 @@ def main():
         slave_status = dict(zip(cursor.column_names, cursor.fetchone()))
 
         binlog_filename, binlog_position = slave_status['Relay_Master_Log_File'], slave_status['Exec_Master_Log_Pos']
-        logger.info("master status: filename:", binlog_filename, "position:", binlog_position)
+        logger.info("master status: filename: %s position: %s", binlog_filename, binlog_position)
 
     logger.info("dumping data from read replica")
     dump_args = [
