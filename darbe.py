@@ -1,7 +1,6 @@
-from __future__ import print_function
-
 import argparse
 import subprocess
+import logging
 import time
 import re
 from datetime import datetime
@@ -11,9 +10,12 @@ import boto3
 import botocore.exceptions
 import mysql.connector
 
+logger = logging.getLogger(__name__)
+
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--debug", action="store_true", help="print debug logs")
     parser.add_argument("--region", required=True, help="AWS region name")
     parser.add_argument(
         "--source-instance-id",
@@ -49,7 +51,15 @@ def main():
         "Increase if your data is too big so that it cannot be copied in 24 hours.")
     args = parser.parse_args()
 
-    print("checking required programs")
+    stream_handler = logging.StreamHandler()
+    logger.addHandler(stream_handler)
+
+    if args.debug:
+        stream_handler.setLevel(logging.DEBUG)
+    else:
+        stream_handler.setLevel(logging.INFO)
+
+    logger.info("checking required programs")
     subprocess.check_call(['which', 'mysqldump'])
     subprocess.check_call(['which', 'mysql'])
 
@@ -93,20 +103,20 @@ def main():
                     cursor.execute("SHOW SLAVE STATUS")
                     slave_status = dict(zip(cursor.column_names, cursor.fetchone()))
             except Exception as e:
-                print(e)
+                logger.error(e)
             else:
                 seconds_behind_master = slave_status['Seconds_Behind_Master']
-                print("seconds behind master:", seconds_behind_master)
+                logger.info("seconds behind master:", seconds_behind_master)
                 if seconds_behind_master is None:
                     continue
 
                 if seconds_behind_master < 1:
                     break
 
-    print("getting details of source instance")
+    logger.info("getting details of source instance")
     source_instance = rds.describe_db_instances(DBInstanceIdentifier=args.source_instance_id)['DBInstances'][0]
 
-    print("creating replication security group")
+    logger.info("creating replication security group")
     vpc_id = source_instance['DBSubnetGroup']['VpcId']
     try:
         response = ec2.create_security_group(
@@ -117,7 +127,7 @@ def main():
         if e.response['Error']['Code'] != 'InvalidGroup.Duplicate':
             raise
 
-        print("security group already exists")
+        logger.info("security group already exists")
         security_group_id = ec2.describe_security_groups(Filters=[{
             'Name': 'vpc-id',
             "Values": [vpc_id]
@@ -128,7 +138,7 @@ def main():
     else:
         security_group_id = response['GroupId']
 
-    print("modifying security group rules:", security_group_id)
+    logger.info("modifying security group rules:", security_group_id)
     try:
         ec2.authorize_security_group_ingress(
             GroupId=security_group_id,
@@ -144,23 +154,23 @@ def main():
         if e.response['Error']['Code'] != 'InvalidPermission.Duplicate':
             raise
 
-        print("security group permission already exists")
+        logger.info("security group permission already exists")
 
     security_group_ids = [g['VpcSecurityGroupId'] for g in source_instance['VpcSecurityGroups']]
     if security_group_id in security_group_ids:
-        print("replication security group is already attached to the source instance")
+        logger.info("replication security group is already attached to the source instance")
     else:
-        print("adding replication security group to the source instance")
+        logger.info("adding replication security group to the source instance")
         security_group_ids.append(security_group_id)
         rds.modify_db_instance(DBInstanceIdentifier=args.source_instance_id, VpcSecurityGroupIds=security_group_ids)
 
-        print("waiting for source instance to become available")
+        logger.info("waiting for source instance to become available")
         time.sleep(60)  # instance state does not switch to "modifying" immediately
         wait_db_instance_available(args.source_instance_id)
 
     grants = []
     if args.users:
-        print("getting grants from source instance")
+        logger.info("getting grants from source instance")
         with connect_db(source_instance) as cursor:
             cursor.execute("SELECT VERSION()")
             version = cursor.fetchone()[0]
@@ -181,7 +191,7 @@ def main():
                     grant = grant.replace("<secret>", "'%s'" % password)
                     grants.append(grant)
 
-    print("setting binlog retention hours on source instance to:", args.binlog_retention_hours)
+    logger.info("setting binlog retention hours on source instance to:", args.binlog_retention_hours)
     # setting via mysql.connector gives an error. don't know why.
     subprocess.check_call([
         'mysql',
@@ -202,13 +212,13 @@ def main():
         new_parameter_group = original_parameter_group.replace(match.groups()[0], timestamp)
     else:
         new_parameter_group = "%s-darbe-%s" % (original_parameter_group, timestamp)
-    print("copying parameter group as:", new_parameter_group)
+    logger.info("copying parameter group as:", new_parameter_group)
     rds.copy_db_parameter_group(
         SourceDBParameterGroupIdentifier=original_parameter_group,
         TargetDBParameterGroupIdentifier=new_parameter_group,
         TargetDBParameterGroupDescription="copied from %s then modified" % original_parameter_group)
 
-    print("modifying new parameter group")
+    logger.info("modifying new parameter group")
     rds.modify_db_parameter_group(
         DBParameterGroupName=new_parameter_group,
         # these parameters makes slave sql thread run faster,
@@ -226,7 +236,7 @@ def main():
             },
         ])
 
-    print("creating new db instance:", args.new_instance_id)
+    logger.info("creating new db instance:", args.new_instance_id)
     new_instance_params = dict(
         AllocatedStorage=args.allocated_storage or source_instance['AllocatedStorage'],
         AutoMinorVersionUpgrade=source_instance['AutoMinorVersionUpgrade'],
@@ -259,37 +269,37 @@ def main():
     rds.create_db_instance(**new_instance_params)
 
     read_replica_instance_id = "%s-readreplica-%s" % (source_instance['DBInstanceIdentifier'], timestamp)
-    print("crating read replica:", read_replica_instance_id)
+    logger.info("crating read replica:", read_replica_instance_id)
     rds.create_db_instance_read_replica(
         DBInstanceIdentifier=read_replica_instance_id,
         SourceDBInstanceIdentifier=source_instance['DBInstanceIdentifier'],
         DBInstanceClass=source_instance['DBInstanceClass'],
         AvailabilityZone=source_instance['AvailabilityZone'])['DBInstance']
 
-    print("waiting for new instance to become available")
+    logger.info("waiting for new instance to become available")
     wait_db_instance_available(args.new_instance_id)
 
-    print("getting details of new instance")
+    logger.info("getting details of new instance")
     new_instance = rds.describe_db_instances(DBInstanceIdentifier=args.new_instance_id)['DBInstances'][0]
 
-    print("waiting for read replica to become available")
+    logger.info("waiting for read replica to become available")
     wait_db_instance_available(read_replica_instance_id)
 
-    print("getting details of created read replica")
+    logger.info("getting details of created read replica")
     read_replica_instance = rds.describe_db_instances(DBInstanceIdentifier=read_replica_instance_id)['DBInstances'][0]
 
-    print("stopping replication on read replica")
+    logger.info("stopping replication on read replica")
     with connect_db(read_replica_instance) as cursor:
         cursor.callproc("mysql.rds_stop_replication")
 
-        print("finding binlog position")
+        logger.info("finding binlog position")
         cursor.execute("SHOW SLAVE STATUS")
         slave_status = dict(zip(cursor.column_names, cursor.fetchone()))
 
         binlog_filename, binlog_position = slave_status['Relay_Master_Log_File'], slave_status['Exec_Master_Log_Pos']
-        print("master status: filename:", binlog_filename, "position:", binlog_position)
+        logger.info("master status: filename:", binlog_filename, "position:", binlog_position)
 
-    print("dumping data from read replica")
+    logger.info("dumping data from read replica")
     dump_args = [
         'mysqldump',
         '-h',
@@ -306,7 +316,7 @@ def main():
     dump_args.extend(args.databases.split(','))
     dump = subprocess.Popen(dump_args, stdout=subprocess.PIPE)
 
-    print("loading data to new instance")
+    logger.info("loading data to new instance")
     load = subprocess.Popen(
         [
             'mysql',
@@ -321,36 +331,36 @@ def main():
         ],
         stdin=dump.stdout)
 
-    print("waiting for data transfer to finish")
+    logger.info("waiting for data transfer to finish")
     load.wait()
     assert load.returncode == 0
     dump.wait()
     assert dump.returncode == 0
-    print("data transfer is finished")
+    logger.info("data transfer is finished")
 
-    print("deleting read replica instance")
+    logger.info("deleting read replica instance")
     rds.delete_db_instance(DBInstanceIdentifier=read_replica_instance_id, SkipFinalSnapshot=True)
 
-    print("creating replication user on source instance")
+    logger.info("creating replication user on source instance")
     with connect_db(source_instance) as cursor:
         cursor.execute("GRANT REPLICATION SLAVE ON *.* TO '%s'@'%%' IDENTIFIED BY '%s'" %
                        (args.master_user_name, args.master_user_password))
 
-    print("setting master on new instance")
+    logger.info("setting master on new instance")
     with connect_db(new_instance) as cursor:
         cursor.callproc("mysql.rds_set_external_master",
                         (source_instance['Endpoint']['Address'], source_instance['Endpoint']['Port'],
                          args.master_user_name, args.master_user_password, binlog_filename, binlog_position, 0))
 
-        print("starting replication on new instance")
+        logger.info("starting replication on new instance")
         cursor.callproc("mysql.rds_start_replication")
 
         if grants:
-            print("creating users on new instance")
+            logger.info("creating users on new instance")
             for grant in grants:
                 cursor.execute(grant)
 
-    print("wating until new instance catches source instance")
+    logger.info("wating until new instance catches source instance")
     wait_until_zero_lag(new_instance)
 
     changes = {}
@@ -360,17 +370,17 @@ def main():
     if source_instance['MultiAZ']:
         changes['MultiAZ'] = source_instance['MultiAZ']
     if changes:
-        print("modifying new instance last time")
+        logger.info("modifying new instance last time")
         rds.modify_db_instance(DBInstanceIdentifier=args.new_instance_id, ApplyImmediately=True, **changes)
 
-        print("waiting for new instance to become available")
+        logger.info("waiting for new instance to become available")
         time.sleep(60)  # instance state does not switch to "modifying" immediately
         wait_db_instance_available(args.new_instance_id)
 
-        print("wating until new instance catches source instance")
+        logger.info("wating until new instance catches source instance")
         wait_until_zero_lag(new_instance)
 
-    print("all done")
+    logger.info("all done")
 
 
 if __name__ == '__main__':
