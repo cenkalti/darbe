@@ -180,16 +180,25 @@ def main():
             if version < (5, 7, 6):
                 password_column = 'Password'
             else:
-                password_column = 'HEX(authentication_string)'
-            users = args.users.split(',')
-            users_in = ','.join(map(lambda x: "'%s'" % x, users))
+                password_column = 'authentication_string'
+            users_in = ','.join(map(lambda x: "'%s'" % x, args.users.split(',')))
             sql = "SELECT User, Host, %s FROM mysql.user WHERE User in (%s)" % (password_column, users_in)
+            logger.debug("running sql: %s", sql)
             cursor.execute(sql)
             for user, host, password in cursor.fetchall():
+                logger.debug("user: %s, host: %s, password: %s", user, host, password)
                 cursor.execute("SHOW GRANTS FOR %s@'%s'" % (user, host))
                 for grant in cursor.fetchall():
                     grant = str(grant[0])
-                    grant = grant.replace("<secret>", "'%s'" % password)
+                    logger.debug("grant: %s", grant)
+                    if not grant.startswith('GRANT USAGE '):
+                        continue
+
+                    if 'IDENTIFIED BY' in grant:
+                        grant = grant.replace("<secret>", "'%s'" % password)
+                    else:
+                        grant += " IDENTIFIED BY '%s'" % password
+
                     grants.append(grant)
 
     logger.info("setting binlog retention hours on source instance to: %s", args.binlog_retention_hours)
@@ -360,6 +369,7 @@ def main():
         if grants:
             logger.info("creating users on new instance")
             for grant in grants:
+                logger.debug("executing grant sql: %s", grant)
                 cursor.execute(grant)
 
     logger.info("wating until new instance catches source instance")
