@@ -167,14 +167,14 @@ def main():
             match = re.match('(\d+)\.(\d+)\.(\d+)', version)
             version = tuple(map(int, match.groups()))
             if version < (5, 7, 6):
-                sql = "SELECT User, Host, Password FROM mysql.user"
+                password_column = 'Password'
             else:
-                sql = "SELECT User, Host, HEX(authentication_string) FROM mysql.user"
+                password_column = 'HEX(authentication_string)'
+            users = args.users.split(',')
+            users_in = ','.join(map(lambda x: "'%s'" % x, users))
+            sql = "SELECT User, Host, %s FROM mysql.user WHERE User in (%s)" % (password_column, users_in)
             cursor.execute(sql)
             for user, host, password in cursor.fetchall():
-                if user not in args.users.split(','):
-                    continue
-
                 cursor.execute("SHOW GRANTS FOR %s@'%s'" % (user, host))
                 for grant in cursor.fetchall():
                     grant = str(grant[0])
