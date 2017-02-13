@@ -202,6 +202,7 @@ def main():
         '-u',
         args.master_user_name,
         '-p%s' % args.master_user_password,
+        '--safe-updates=FALSE',
         '-e',
         "call mysql.rds_set_configuration('binlog retention hours', %i)" % args.binlog_retention_hours,
     ])
