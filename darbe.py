@@ -107,7 +107,7 @@ def main():
                 logger.error(e)
             else:
                 seconds_behind_master = slave_status['Seconds_Behind_Master']
-                logger.info("seconds behind master: %d", seconds_behind_master)
+                logger.info("seconds behind master: %s", seconds_behind_master)
                 if seconds_behind_master is None:
                     continue
 
