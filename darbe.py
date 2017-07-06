@@ -188,7 +188,7 @@ def main():
             cursor.execute(sql)
             for user, host, password in cursor.fetchall():
                 logger.debug("user: %s, host: %s, password: %s", user, host, password)
-                full_user = "'%s'%'%s'" % (user, host)
+                full_user = "'%s'%%'%s'" % (user, host)
                 if version >= (5, 7, 6):
                     cursor.execute("SHOW CREATE USER %s" % full_user)
                     create_user_sql = cursor.fetchall()[0][0]
