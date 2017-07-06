@@ -104,7 +104,7 @@ def main():
                     cursor.execute("SHOW SLAVE STATUS")
                     slave_status = dict(zip(cursor.column_names, cursor.fetchone()))
             except Exception as e:
-                logger.error(e)
+                logger.error(str(e))
             else:
                 seconds_behind_master = slave_status['Seconds_Behind_Master']
                 logger.info("seconds behind master: %s", seconds_behind_master)
