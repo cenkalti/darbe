@@ -12,7 +12,7 @@ setup(
     py_modules=['darbe'],
     install_requires=[
         'boto3',
-        'mysql-connector',
+        'mysql-connector>=2.1,<2.2',
     ],
     description='RDS MySQL replication setup tool',
     entry_points={
