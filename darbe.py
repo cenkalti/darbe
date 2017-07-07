@@ -6,9 +6,9 @@ import re
 from datetime import datetime
 from contextlib import closing, contextmanager
 
+import MySQLdb
 import boto3
 import botocore.exceptions
-import mysql.connector
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ def main():
     @contextmanager
     def connect_db(instance):
         """Yields a cursor on a new connection to a database."""
-        conn = mysql.connector.connect(
+        conn = MySQLdb.connect(
             user=args.master_user_name,
             password=args.master_user_password,
             host=instance['Endpoint']['Address'],
