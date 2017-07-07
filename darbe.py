@@ -73,7 +73,7 @@ def main():
     timestamp = str(datetime.utcnow()).replace('-', '').replace(':', '').replace(' ', '')[:14]
 
     @contextmanager
-    def connect_db(instance):
+    def connect_db(instance, cursorclass=None):
         """Yields a cursor on a new connection to a database."""
         conn = MySQLdb.connect(
             user=args.master_user_name,
@@ -81,7 +81,11 @@ def main():
             host=instance['Endpoint']['Address'],
             port=instance['Endpoint']['Port'])
         with closing(conn):
-            cursor = conn.cursor()
+            if cursorclass:
+                cursor = conn.cursor(cursorclass)
+            else:
+                cursor = conn.cursor()
+
             with closing(cursor):
                 yield cursor
 
@@ -100,9 +104,9 @@ def main():
         while True:
             time.sleep(4)
             try:
-                with connect_db(instance) as cursor:
+                with connect_db(instance, cursorclass=MySQLdb.cursors.DictCursor) as cursor:
                     cursor.execute("SHOW SLAVE STATUS")
-                    slave_status = dict(zip(cursor.column_names, cursor.fetchone()))
+                    slave_status = cursor.fetchone()
             except Exception as e:
                 logger.error(str(e))
             else:
@@ -305,15 +309,15 @@ def main():
     read_replica_instance = rds.describe_db_instances(DBInstanceIdentifier=read_replica_instance_id)['DBInstances'][0]
 
     logger.info("stopping replication on read replica")
-    with connect_db(read_replica_instance) as cursor:
+    with connect_db(read_replica_instance, cursorclass=MySQLdb.cursors.DictCursor) as cursor:
         cursor.callproc("mysql.rds_stop_replication")
 
         logger.info("finding binlog position")
         cursor.execute("SHOW SLAVE STATUS")
-        slave_status = dict(zip(cursor.column_names, cursor.fetchone()))
+        slave_status = cursor.fetchone()
 
-        binlog_filename, binlog_position = slave_status['Relay_Master_Log_File'], slave_status['Exec_Master_Log_Pos']
-        logger.info("master status: filename: %s position: %s", binlog_filename, binlog_position)
+    binlog_filename, binlog_position = slave_status['Relay_Master_Log_File'], slave_status['Exec_Master_Log_Pos']
+    logger.info("master status: filename: %s position: %s", binlog_filename, binlog_position)
 
     logger.info("dumping data from read replica")
     dump_args = [
