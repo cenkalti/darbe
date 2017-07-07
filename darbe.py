@@ -200,7 +200,8 @@ def main():
                 for grant in cursor.fetchall():
                     grant = str(grant[0])
                     logger.debug("grant: %s", grant)
-                    if 'IDENTIFIED BY' in grant:
+
+                    if version < (5, 7, 6) and 'IDENTIFIED BY' in grant:
                         grant = grant.replace("<secret>", "'%s'" % password)
 
                     grants.append(grant)
