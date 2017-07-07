@@ -23,11 +23,11 @@ Basic usage is like:
 darbe \
   --region eu-west-1 \
   --source-instance-id putio16 \
+  --new-instance-id putio17
   --master-user-name root \
   --master-user-password XXX \
   --databases putio,mogilefs \
   --users putio,mogile \
-  --new-instance-id putio17
 ```
 
 You may override some properties on the new instance.
