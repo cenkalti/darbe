@@ -368,6 +368,7 @@ def main():
 
     logger.info("setting master on new instance")
     with connect_db(new_instance) as cursor:
+        cursor.connection.autocommit(False)
         cursor.callproc("mysql.rds_set_external_master",
                         (source_instance['Endpoint']['Address'], source_instance['Endpoint']['Port'],
                          args.master_user_name, args.master_user_password, binlog_filename, binlog_position, 0))
@@ -375,8 +376,9 @@ def main():
         logger.info("starting replication on new instance")
         cursor.callproc("mysql.rds_start_replication")
 
-        if grants:
-            logger.info("creating users on new instance")
+    if grants:
+        logger.info("creating users on new instance")
+        with connect_db(new_instance) as cursor:
             for grant in grants:
                 logger.debug("executing grant sql: %s", grant)
                 cursor.execute(grant)
