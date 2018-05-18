@@ -6,7 +6,8 @@ import re
 from datetime import datetime
 from contextlib import closing, contextmanager
 
-import MySQLdb
+import pymysql
+import pymysql.cursors
 import boto3
 import botocore.exceptions
 
@@ -73,19 +74,17 @@ def main():
     timestamp = str(datetime.utcnow()).replace('-', '').replace(':', '').replace(' ', '')[:14]
 
     @contextmanager
-    def connect_db(instance, cursorclass=None):
+    def connect_db(instance, cursorclass=pymysql.cursors.Cursor):
         """Yields a cursor on a new connection to a database."""
-        conn = MySQLdb.connect(
+        conn = pymysql.connect(
             user=args.master_user_name,
             password=args.master_user_password,
             host=instance['Endpoint']['Address'],
-            port=instance['Endpoint']['Port'])
+            port=instance['Endpoint']['Port'],
+            autocommit=True,
+            cursorclass=cursorclass)
         with closing(conn):
-            if cursorclass:
-                cursor = conn.cursor(cursorclass)
-            else:
-                cursor = conn.cursor()
-
+            cursor = conn.cursor()
             with closing(cursor):
                 yield cursor
 
@@ -104,7 +103,7 @@ def main():
         while True:
             time.sleep(4)
             try:
-                with connect_db(instance, cursorclass=MySQLdb.cursors.DictCursor) as cursor:
+                with connect_db(instance, cursorclass=pymysql.cursors.DictCursor) as cursor:
                     cursor.execute("SHOW SLAVE STATUS")
                     slave_status = cursor.fetchone()
             except Exception as e:
@@ -309,7 +308,7 @@ def main():
     read_replica_instance = rds.describe_db_instances(DBInstanceIdentifier=read_replica_instance_id)['DBInstances'][0]
 
     logger.info("stopping replication on read replica")
-    with connect_db(read_replica_instance, cursorclass=MySQLdb.cursors.DictCursor) as cursor:
+    with connect_db(read_replica_instance, cursorclass=pymysql.cursors.DictCursor) as cursor:
         cursor.callproc("mysql.rds_stop_replication")
 
         logger.info("finding binlog position")
@@ -368,12 +367,12 @@ def main():
 
     logger.info("setting master on new instance")
     with connect_db(new_instance) as cursor:
-        cursor.connection.autocommit(False)
         cursor.callproc("mysql.rds_set_external_master",
                         (source_instance['Endpoint']['Address'], source_instance['Endpoint']['Port'],
                          args.master_user_name, args.master_user_password, binlog_filename, binlog_position, 0))
 
-        logger.info("starting replication on new instance")
+    logger.info("starting replication on new instance")
+    with connect_db(new_instance) as cursor:
         cursor.callproc("mysql.rds_start_replication")
 
     if grants:
