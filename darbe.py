@@ -178,8 +178,8 @@ def main():
         with connect_db(source_instance) as cursor:
             cursor.execute("SELECT VERSION()")
             version = cursor.fetchone()[0]
-            match = re.match('(\d+)\.(\d+)\.(\d+)', version)
-            version = tuple(map(int, match.groups()))
+            match = re.match(r'(\d+)\.(\d+)\.(\d+)', version)
+            version = tuple(map(int, match.groups()))  # type: ignore
             if version < (5, 7, 6):
                 password_column = 'Password'
             else:
@@ -226,7 +226,7 @@ def main():
     ])
 
     original_parameter_group = args.parameter_group or source_instance['DBParameterGroups'][0]['DBParameterGroupName']
-    match = re.match('.+-darbe-(\d+)', original_parameter_group)
+    match = re.match(r'.+-darbe-(\d+)', original_parameter_group)
     if match:
         new_parameter_group = original_parameter_group.replace(match.groups()[0], timestamp)
     else:
