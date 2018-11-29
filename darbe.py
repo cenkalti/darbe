@@ -3,6 +3,7 @@ import subprocess
 import logging
 import time
 import re
+import os
 from datetime import datetime
 from contextlib import closing, contextmanager
 
@@ -64,6 +65,9 @@ def main():
     logger.info("checking required programs")
     subprocess.check_call(['which', 'mysqldump'])
     subprocess.check_call(['which', 'mysql'])
+
+    # put root password to environ for not using -p flag with mysql commands below.
+    os.environ['MYSQL_PWD'] = args.master_user_password
 
     rds = boto3.client('rds', region_name=args.region)
     ec2 = boto3.client('ec2', region_name=args.region)
@@ -219,7 +223,6 @@ def main():
         str(source_instance['Endpoint']['Port']),
         '-u',
         args.master_user_name,
-        '-p%s' % args.master_user_password,
         '--safe-updates=FALSE',
         '-e',
         "call mysql.rds_set_configuration('binlog retention hours', %i)" % args.binlog_retention_hours,
@@ -327,7 +330,6 @@ def main():
         str(read_replica_instance['Endpoint']['Port']),
         '-u',
         args.master_user_name,
-        '-p%s' % args.master_user_password,
         '--single-transaction',
         '--order-by-primary',
         '--set-gtid-purged=OFF',
@@ -346,7 +348,6 @@ def main():
             str(new_instance['Endpoint']['Port']),
             '-u',
             args.master_user_name,
-            '-p%s' % args.master_user_password,
             '-f',
         ],
         stdin=dump.stdout)
