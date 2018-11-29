@@ -1,8 +1,21 @@
+import os
 from setuptools import setup
+
+
+def read(*fname):
+    with open(os.path.join(os.path.dirname(__file__), *fname)) as f:
+        return f.read()
+
+
+try:
+    version = read('VERSION').strip()
+except FileNotFoundError:
+    version = '0'
+
 
 setup(
     name='Darbe',
-    version='1.3.1',
+    version=version,
     author='Cenk Altı',
     author_email='cenkalti@gmail.com',
     keywords='mysql rds migration database replication slave',

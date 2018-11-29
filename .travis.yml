@@ -1,0 +1,15 @@
+language: python
+python: 3.5
+install: pip install .
+script: skip
+before_deploy:
+- echo "$TRAVIS_TAG" | tr -d 'v' > VERSION
+deploy:
+  on:
+    repo: cenkalti/darbe
+    tags: true
+  skip_cleanup: true
+  provider: pypi
+  user: cenkalti
+  password:
+    secure: ZmMMWeyJcd+EiqwdKM19HeiAKfzW75aUy1aaQ/lIDF0tlDBf+MDDQIdF0xsNVxsVOJvKHUE5pZEyI1KoLjfOgFU25KBlOEx4t9a3vbvqAARl2P9lIrxGAkU4CNp9++y2s1Qp1calEVMzQXsvJCU6km7fmp3YY23rDO0u/xV/1/te3hSvwAXhi9lgouCdH3SezNWN+tJodKkTbMuxi2+s1ABk8HHPYbXPLWtwllpUjcKE01ROUQQ5cnJSyDrmNv+3pUJldJ+gwoREG0kUxV+SjqAYpkXCamWeOealpTJIct84p6/yZqNKgSiGlhwqEv+kAI4BNld+vCUeGwmsnpLuRRYt9pygRdmnlWTgVTGg9qUprNgqRrgfHpLl2oAVCdAsioo7XoH+Y6z9uhMf75c/uKc9CrPHbt6HOObVVZn7wAuh3SOkDu6cLZ9s51N7TcxeQAWSXMDgpxfLma1/13bEOTMDRNH2HhIO8cOQAP5w+Jrrr22zPVD0BLgKooWr4heITn0CX8NPNqb10ExInqPEMM2ywXJ5NspEZSz/Y7HMhefKC6nqluYBgnLwRw+eyxK3ZRT3f/NfnTY3Su/BlJ0TndlLGFVw/eMTLciSJ3tbXUvvy8rTqb/tAbOJBoqsW4a1ngIFYegAHU4Ua85LarDlhsibs+haAumaqaQwnHQk5PE=
