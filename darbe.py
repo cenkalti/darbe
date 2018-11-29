@@ -179,14 +179,18 @@ def main():
         time.sleep(60)  # instance state does not switch to "modifying" immediately
         wait_db_instance_available(args.source_instance_id)
 
+    with connect_db(source_instance) as cursor:
+        cursor.execute("SELECT VERSION()")
+        version_string = cursor.fetchone()[0]
+        match = re.match(r'(\d+)\.(\d+)\.(\d+)', version_string)
+        version = tuple(map(int, match.groups()))  # type: ignore
+
+    logger.info("source instance mysql version: %s", version)
+
     grants = []
     if args.users:
         logger.info("getting grants from source instance")
         with connect_db(source_instance) as cursor:
-            cursor.execute("SELECT VERSION()")
-            version = cursor.fetchone()[0]
-            match = re.match(r'(\d+)\.(\d+)\.(\d+)', version)
-            version = tuple(map(int, match.groups()))  # type: ignore
             if version < (5, 7, 6):
                 password_column = 'Password'
             else:
