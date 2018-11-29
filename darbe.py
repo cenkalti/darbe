@@ -329,22 +329,23 @@ def main():
         '--set-gtid-purged=OFF',
         '--databases',
     ]
+    logger.debug("running mysqldump: %s", " ".join(dump_args))
     dump_args.extend(args.databases.split(','))
     dump = subprocess.Popen(dump_args, stdout=subprocess.PIPE)
 
     logger.info("loading data to new instance")
-    load = subprocess.Popen(
-        [
-            'mysql',
-            '-h',
-            new_instance['Endpoint']['Address'],
-            '-P',
-            str(new_instance['Endpoint']['Port']),
-            '-u',
-            args.master_user_name,
-            '-f',
-        ],
-        stdin=dump.stdout)
+    load_args = [
+        'mysql',
+        '-h',
+        new_instance['Endpoint']['Address'],
+        '-P',
+        str(new_instance['Endpoint']['Port']),
+        '-u',
+        args.master_user_name,
+        '-f',
+    ]
+    logger.debug("running mysql for loding data: %s", " ".join(load_args))
+    load = subprocess.Popen(load_args, stdin=dump.stdout)
 
     logger.info("waiting for data transfer to finish")
     load.wait()
@@ -358,8 +359,10 @@ def main():
 
     logger.info("creating replication user on source instance")
     with connect_db(source_instance) as cursor:
-        cursor.execute("GRANT REPLICATION SLAVE ON *.* TO '%s'@'%%' IDENTIFIED BY '%s'" %
-                       (args.master_user_name, args.master_user_password))
+        sql = "GRANT REPLICATION SLAVE ON *.* TO '%s'@'%%' IDENTIFIED BY '%s'" % (
+                args.master_user_name, args.master_user_password)
+        logger.debug("running sql: %s", sql)
+        cursor.execute(sql)
 
     logger.info("setting master on new instance")
     with connect_db(new_instance) as cursor:
