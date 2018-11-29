@@ -217,19 +217,10 @@ def main():
                     grants.append(grant)
 
     logger.info("setting binlog retention hours on source instance to: %s", args.binlog_retention_hours)
-    # setting via mysql.connector gives an error. don't know why.
-    subprocess.check_call([
-        'mysql',
-        '-h',
-        source_instance['Endpoint']['Address'],
-        '-P',
-        str(source_instance['Endpoint']['Port']),
-        '-u',
-        args.master_user_name,
-        '--safe-updates=FALSE',
-        '-e',
-        "call mysql.rds_set_configuration('binlog retention hours', %i)" % args.binlog_retention_hours,
-    ])
+    with connect_db(source_instance) as cursor:
+        sql = "call mysql.rds_set_configuration('binlog retention hours', %i)" % args.binlog_retention_hours
+        logger.debug("running sql: %s", sql)
+        cursor.execute(sql)
 
     original_parameter_group = args.parameter_group or source_instance['DBParameterGroups'][0]['DBParameterGroupName']
     match = re.match(r'.+-darbe-(\d+)', original_parameter_group)
