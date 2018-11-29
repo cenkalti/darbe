@@ -361,13 +361,6 @@ def main():
     logger.info("deleting read replica instance")
     rds.delete_db_instance(DBInstanceIdentifier=read_replica_instance_id, SkipFinalSnapshot=True)
 
-    logger.info("creating replication user on source instance")
-    with connect_db(source_instance) as cursor:
-        sql = "GRANT REPLICATION SLAVE ON *.* TO '%s'@'%%' IDENTIFIED BY '%s'" % (
-                args.master_user_name, args.master_user_password)
-        logger.debug("running sql: %s", sql)
-        cursor.execute(sql)
-
     logger.info("setting master on new instance")
     with connect_db(new_instance) as cursor:
         cursor.callproc("mysql.rds_set_external_master",
