@@ -53,8 +53,11 @@ def main():
         "Increase if your data is too big so that it cannot be copied in 24 hours.")
     args = parser.parse_args()
 
+    formatter = logging.Formatter('%(asctime)s %(levelname)-5.5s L%(lineno)-3d %(message)s', datefmt='%H:%M:%S')
+
     stream_handler = logging.StreamHandler()
     stream_handler.setLevel(logging.DEBUG)
+    stream_handler.setFormatter(formatter)
     logger.addHandler(stream_handler)
 
     if args.debug:
