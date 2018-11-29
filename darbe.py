@@ -330,6 +330,7 @@ def main():
         '-p%s' % args.master_user_password,
         '--single-transaction',
         '--order-by-primary',
+        '--set-gtid-purged=OFF',
         '--databases',
     ]
     dump_args.extend(args.databases.split(','))
