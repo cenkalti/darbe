@@ -387,6 +387,10 @@ def main():
         changes['PreferredBackupWindow'] = source_instance['PreferredBackupWindow']
     if source_instance['MultiAZ']:
         changes['MultiAZ'] = source_instance['MultiAZ']
+    if source_instance['PerformanceInsightsEnabled']:
+        changes['EnablePerformanceInsights'] = source_instance['PerformanceInsightsEnabled']
+        changes['PerformanceInsightsKMSKeyId'] = source_instance['PerformanceInsightsKMSKeyId']
+        changes['PerformanceInsightsRetentionPeriod'] = source_instance['PerformanceInsightsRetentionPeriod']
     if changes:
         logger.info("modifying new instance last time")
         rds.modify_db_instance(DBInstanceIdentifier=args.new_instance_id, ApplyImmediately=True, **changes)
