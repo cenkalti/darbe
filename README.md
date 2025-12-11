@@ -1,6 +1,10 @@
 # Darbe
 RDS MySQL replication setup tool
 
+> **Note:** This project is now obsolete. AWS introduced [Blue/Green Deployments](https://aws.amazon.com/blogs/aws/new-fully-managed-blue-green-deployments-in-amazon-aurora-and-amazon-rds/) for Amazon RDS and Aurora, which provides a fully managed solution for zero-downtime database migrations and upgrades. Blue/Green deployments offer the same benefits that Darbe was created to provide, with better integration and support from AWS.
+>
+> Darbe served [put.io](https://put.io) well from 2016 until AWS Blue/Green deployments became available. This repository is preserved for historical reference.
+
 # What is it?
 Darbe is for setting up a manual replication between RDS instances of MySQL.
 Manual replication has 2 benefits over creating a Read Replica:
